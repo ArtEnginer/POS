@@ -124,12 +124,15 @@ class _ReceivingFormPageState extends State<ReceivingFormPage> {
       return;
     }
 
-    // Create receiving items (TIDAK mengubah PO data)
+    // Generate receiving ID first
+    final receivingId = const Uuid().v4();
+
+    // Create receiving items with proper receivingId
     final receivingItems =
         _receivingItems.map((item) {
           return ReceivingItem(
             id: const Uuid().v4(),
-            receivingId: '', // Will be set by receiving
+            receivingId: receivingId, // ✅ Set proper receiving ID
             purchaseItemId: item.purchaseItem.id,
             productId: item.purchaseItem.productId,
             productName: item.purchaseItem.productName,
@@ -150,7 +153,7 @@ class _ReceivingFormPageState extends State<ReceivingFormPage> {
 
     // Create receiving (TERPISAH dari PO)
     final receiving = Receiving(
-      id: const Uuid().v4(),
+      id: receivingId, // ✅ Use same ID
       receivingNumber: _receivingNumber!,
       purchaseId: widget.purchase.id, // Reference only
       purchaseNumber: widget.purchase.purchaseNumber, // Copy for display

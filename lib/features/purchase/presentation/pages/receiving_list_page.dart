@@ -7,6 +7,7 @@ import '../bloc/purchase_event.dart';
 import '../bloc/purchase_state.dart';
 import '../bloc/receiving_bloc.dart';
 import 'receiving_form_page.dart';
+import 'receiving_history_page.dart';
 
 class ReceivingListPage extends StatefulWidget {
   const ReceivingListPage({Key? key}) : super(key: key);
@@ -68,6 +69,25 @@ class _ReceivingListPageState extends State<ReceivingListPage> {
       appBar: AppBar(
         title: const Text('Penerimaan Barang (Receiving)'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (_) => MultiBlocProvider(
+                        providers: [
+                          BlocProvider(create: (_) => sl<ReceivingBloc>()),
+                          BlocProvider(create: (_) => sl<PurchaseBloc>()),
+                        ],
+                        child: const ReceivingHistoryPage(),
+                      ),
+                ),
+              );
+            },
+            tooltip: 'Riwayat Penerimaan',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadPurchases,

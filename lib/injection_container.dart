@@ -39,6 +39,13 @@ import 'features/purchase/domain/repositories/receiving_repository.dart';
 import 'features/purchase/domain/usecases/receiving_usecases.dart';
 import 'features/purchase/presentation/bloc/receiving_bloc.dart';
 
+// Features - Purchase Return
+import 'features/purchase/data/datasources/purchase_return_local_data_source.dart';
+import 'features/purchase/data/repositories/purchase_return_repository_impl.dart';
+import 'features/purchase/domain/repositories/purchase_return_repository.dart';
+import 'features/purchase/domain/usecases/purchase_return_usecases.dart';
+import 'features/purchase/presentation/bloc/purchase_return_bloc.dart';
+
 final sl = GetIt.instance;
 
 Future<void> init() async {
@@ -180,6 +187,42 @@ Future<void> init() async {
   // Data sources
   sl.registerLazySingleton<ReceivingLocalDataSource>(
     () => ReceivingLocalDataSourceImpl(databaseHelper: sl()),
+  );
+
+  // ========== Features - Purchase Return ==========
+
+  // Bloc
+  sl.registerFactory(
+    () => PurchaseReturnBloc(
+      getAllPurchaseReturns: sl(),
+      getPurchaseReturnById: sl(),
+      getPurchaseReturnsByReceivingId: sl(),
+      searchPurchaseReturns: sl(),
+      createPurchaseReturn: sl(),
+      updatePurchaseReturn: sl(),
+      deletePurchaseReturn: sl(),
+      generateReturnNumber: sl(),
+    ),
+  );
+
+  // Use cases
+  sl.registerLazySingleton(() => GetAllPurchaseReturns(sl()));
+  sl.registerLazySingleton(() => GetPurchaseReturnById(sl()));
+  sl.registerLazySingleton(() => GetPurchaseReturnsByReceivingId(sl()));
+  sl.registerLazySingleton(() => SearchPurchaseReturns(sl()));
+  sl.registerLazySingleton(() => CreatePurchaseReturn(sl()));
+  sl.registerLazySingleton(() => UpdatePurchaseReturn(sl()));
+  sl.registerLazySingleton(() => DeletePurchaseReturn(sl()));
+  sl.registerLazySingleton(() => GenerateReturnNumber(sl()));
+
+  // Repository
+  sl.registerLazySingleton<PurchaseReturnRepository>(
+    () => PurchaseReturnRepositoryImpl(localDataSource: sl()),
+  );
+
+  // Data sources
+  sl.registerLazySingleton<PurchaseReturnLocalDataSource>(
+    () => PurchaseReturnLocalDataSourceImpl(databaseHelper: sl()),
   );
 
   // ========== Core ==========

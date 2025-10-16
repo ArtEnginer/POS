@@ -146,11 +146,20 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           conflictAlgorithm: ConflictAlgorithm.abort,
         );
 
+        print(
+          'DEBUG: Inserting receiving items, count: ${receiving.items.length}',
+        );
+
         // 2. Insert receiving items
         for (var item in receiving.items) {
+          final itemJson = (item as ReceivingItemModel).toJson();
+          print(
+            'DEBUG: Inserting item: ${item.productName}, receiving_id: ${itemJson['receiving_id']}',
+          );
+
           await txn.insert(
             'receiving_items',
-            (item as ReceivingItemModel).toJson(),
+            itemJson,
             conflictAlgorithm: ConflictAlgorithm.abort,
           );
 
@@ -170,6 +179,8 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
             ],
           );
         }
+
+        print('DEBUG: All items inserted successfully');
 
         // 4. Update purchase status to RECEIVED (tidak ubah data lain)
         await txn.update(
@@ -355,14 +366,30 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
   ) async {
     try {
       final db = await databaseHelper.database;
+
+      // Debug: Check if receiving_items table has data
+      final countResult = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM receiving_items WHERE receiving_id = ?',
+        [receivingId],
+      );
+      print(
+        'DEBUG: receiving_id=$receivingId, items count in DB: ${countResult.first['count']}',
+      );
+
       final results = await db.query(
         'receiving_items',
         where: 'receiving_id = ?',
         whereArgs: [receivingId],
       );
 
+      print('DEBUG: Query results count: ${results.length}');
+      if (results.isNotEmpty) {
+        print('DEBUG: First item data: ${results.first}');
+      }
+
       return results.map((json) => ReceivingItemModel.fromJson(json)).toList();
     } catch (e) {
+      print('DEBUG ERROR in _getReceivingItems: $e');
       throw app_exceptions.DatabaseException(
         message: 'Failed to get receiving items: $e',
       );

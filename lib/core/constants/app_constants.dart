@@ -6,7 +6,8 @@ class AppConstants {
 
   // Database
   static const String localDatabaseName = 'pos_local.db';
-  static const int localDatabaseVersion = 5; // Updated untuk receivings table
+  static const int localDatabaseVersion =
+      6; // Updated untuk purchase_returns table
   static const String hiveBoxName = 'pos_cache';
 
   // Sync Settings

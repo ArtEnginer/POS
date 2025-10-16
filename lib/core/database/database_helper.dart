@@ -308,6 +308,62 @@ class DatabaseHelper {
       )
     ''');
 
+    // Purchase Returns Table
+    await db.execute('''
+      CREATE TABLE purchase_returns (
+        id TEXT PRIMARY KEY,
+        return_number TEXT UNIQUE NOT NULL,
+        receiving_id TEXT NOT NULL,
+        receiving_number TEXT NOT NULL,
+        purchase_id TEXT NOT NULL,
+        purchase_number TEXT NOT NULL,
+        supplier_id TEXT,
+        supplier_name TEXT,
+        return_date TEXT NOT NULL,
+        subtotal REAL NOT NULL,
+        item_discount REAL NOT NULL DEFAULT 0,
+        item_tax REAL NOT NULL DEFAULT 0,
+        total_discount REAL NOT NULL DEFAULT 0,
+        total_tax REAL NOT NULL DEFAULT 0,
+        total REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        reason TEXT,
+        notes TEXT,
+        processed_by TEXT,
+        sync_status TEXT DEFAULT 'PENDING',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (receiving_id) REFERENCES receivings (id),
+        FOREIGN KEY (purchase_id) REFERENCES purchases (id)
+      )
+    ''');
+
+    // Purchase Return Items Table
+    await db.execute('''
+      CREATE TABLE purchase_return_items (
+        id TEXT PRIMARY KEY,
+        return_id TEXT NOT NULL,
+        receiving_item_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        received_quantity INTEGER NOT NULL,
+        return_quantity INTEGER NOT NULL,
+        price REAL NOT NULL,
+        discount REAL NOT NULL DEFAULT 0,
+        discount_type TEXT DEFAULT 'AMOUNT',
+        tax REAL NOT NULL DEFAULT 0,
+        tax_type TEXT DEFAULT 'AMOUNT',
+        subtotal REAL NOT NULL,
+        total REAL NOT NULL,
+        reason TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (return_id) REFERENCES purchase_returns (id),
+        FOREIGN KEY (receiving_item_id) REFERENCES receiving_items (id),
+        FOREIGN KEY (product_id) REFERENCES products (id)
+      )
+    ''');
+
     // Create indexes
     await _createIndexes(db);
 
@@ -390,6 +446,29 @@ class DatabaseHelper {
     );
     await db.execute(
       'CREATE INDEX idx_receiving_items_product ON receiving_items(product_id)',
+    );
+
+    // Purchase Returns indexes
+    await db.execute(
+      'CREATE INDEX idx_purchase_returns_number ON purchase_returns(return_number)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_returns_receiving ON purchase_returns(receiving_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_returns_purchase ON purchase_returns(purchase_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_returns_date ON purchase_returns(return_date)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_returns_status ON purchase_returns(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_return_items_return ON purchase_return_items(return_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_purchase_return_items_product ON purchase_return_items(product_id)',
     );
   }
 
@@ -580,6 +659,87 @@ class DatabaseHelper {
       );
       await db.execute(
         'CREATE INDEX idx_receiving_items_product ON receiving_items(product_id)',
+      );
+    }
+
+    if (oldVersion < 6) {
+      // Create purchase_returns table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_returns (
+          id TEXT PRIMARY KEY,
+          return_number TEXT UNIQUE NOT NULL,
+          receiving_id TEXT NOT NULL,
+          receiving_number TEXT NOT NULL,
+          purchase_id TEXT NOT NULL,
+          purchase_number TEXT NOT NULL,
+          supplier_id TEXT,
+          supplier_name TEXT,
+          return_date TEXT NOT NULL,
+          subtotal REAL NOT NULL,
+          item_discount REAL NOT NULL DEFAULT 0,
+          item_tax REAL NOT NULL DEFAULT 0,
+          total_discount REAL NOT NULL DEFAULT 0,
+          total_tax REAL NOT NULL DEFAULT 0,
+          total REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'DRAFT',
+          reason TEXT,
+          notes TEXT,
+          processed_by TEXT,
+          sync_status TEXT DEFAULT 'PENDING',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (receiving_id) REFERENCES receivings (id),
+          FOREIGN KEY (purchase_id) REFERENCES purchases (id)
+        )
+      ''');
+
+      // Create purchase_return_items table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_return_items (
+          id TEXT PRIMARY KEY,
+          return_id TEXT NOT NULL,
+          receiving_item_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          received_quantity INTEGER NOT NULL,
+          return_quantity INTEGER NOT NULL,
+          price REAL NOT NULL,
+          discount REAL NOT NULL DEFAULT 0,
+          discount_type TEXT DEFAULT 'AMOUNT',
+          tax REAL NOT NULL DEFAULT 0,
+          tax_type TEXT DEFAULT 'AMOUNT',
+          subtotal REAL NOT NULL,
+          total REAL NOT NULL,
+          reason TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (return_id) REFERENCES purchase_returns (id),
+          FOREIGN KEY (receiving_item_id) REFERENCES receiving_items (id),
+          FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+      ''');
+
+      // Create indexes for purchase_returns
+      await db.execute(
+        'CREATE INDEX idx_purchase_returns_number ON purchase_returns(return_number)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_returns_receiving ON purchase_returns(receiving_id)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_returns_purchase ON purchase_returns(purchase_id)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_returns_date ON purchase_returns(return_date)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_returns_status ON purchase_returns(status)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_return_items_return ON purchase_return_items(return_id)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_purchase_return_items_product ON purchase_return_items(product_id)',
       );
     }
   }
