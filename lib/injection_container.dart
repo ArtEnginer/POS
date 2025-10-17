@@ -46,6 +46,21 @@ import 'features/purchase/domain/repositories/purchase_return_repository.dart';
 import 'features/purchase/domain/usecases/purchase_return_usecases.dart';
 import 'features/purchase/presentation/bloc/purchase_return_bloc.dart';
 
+// Features - Sales
+import 'features/sales/data/datasources/sale_local_data_source.dart';
+import 'features/sales/data/repositories/sale_repository_impl.dart';
+import 'features/sales/domain/repositories/sale_repository.dart';
+import 'features/sales/domain/usecases/sale_usecases.dart' as sale_usecases;
+import 'features/sales/presentation/bloc/sale_bloc.dart';
+
+// Features - Customer
+import 'features/customer/data/datasources/customer_local_data_source.dart';
+import 'features/customer/data/repositories/customer_repository_impl.dart';
+import 'features/customer/domain/repositories/customer_repository.dart';
+import 'features/customer/domain/usecases/customer_usecases.dart'
+    as customer_usecases;
+import 'features/customer/presentation/bloc/customer_bloc.dart';
+
 final sl = GetIt.instance;
 
 Future<void> init() async {
@@ -223,6 +238,78 @@ Future<void> init() async {
   // Data sources
   sl.registerLazySingleton<PurchaseReturnLocalDataSource>(
     () => PurchaseReturnLocalDataSourceImpl(databaseHelper: sl()),
+  );
+
+  // ========== Features - Sales ==========
+
+  // Bloc
+  sl.registerFactory(
+    () => SaleBloc(
+      getAllSales: sl(),
+      getSaleById: sl(),
+      getSalesByDateRange: sl(),
+      searchSales: sl(),
+      createSale: sl(),
+      updateSale: sl(),
+      deleteSale: sl(),
+      generateSaleNumber: sl(),
+      getDailySummary: sl(),
+    ),
+  );
+
+  // Use cases
+  sl.registerLazySingleton(() => sale_usecases.GetAllSales(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GetSaleById(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GetSalesByDateRange(sl()));
+  sl.registerLazySingleton(() => sale_usecases.SearchSales(sl()));
+  sl.registerLazySingleton(() => sale_usecases.CreateSale(sl()));
+  sl.registerLazySingleton(() => sale_usecases.UpdateSale(sl()));
+  sl.registerLazySingleton(() => sale_usecases.DeleteSale(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GenerateSaleNumber(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GetDailySummary(sl()));
+
+  // Repository
+  sl.registerLazySingleton<SaleRepository>(
+    () => SaleRepositoryImpl(localDataSource: sl()),
+  );
+
+  // Data sources
+  sl.registerLazySingleton<SaleLocalDataSource>(
+    () => SaleLocalDataSourceImpl(databaseHelper: sl()),
+  );
+
+  // ========== Features - Customer ==========
+
+  // Bloc
+  sl.registerFactory(
+    () => CustomerBloc(
+      getAllCustomers: sl(),
+      getCustomerById: sl(),
+      searchCustomers: sl(),
+      createCustomer: sl(),
+      updateCustomer: sl(),
+      deleteCustomer: sl(),
+      generateCustomerCode: sl(),
+    ),
+  );
+
+  // Use cases
+  sl.registerLazySingleton(() => customer_usecases.GetAllCustomers(sl()));
+  sl.registerLazySingleton(() => customer_usecases.GetCustomerById(sl()));
+  sl.registerLazySingleton(() => customer_usecases.SearchCustomers(sl()));
+  sl.registerLazySingleton(() => customer_usecases.CreateCustomer(sl()));
+  sl.registerLazySingleton(() => customer_usecases.UpdateCustomer(sl()));
+  sl.registerLazySingleton(() => customer_usecases.DeleteCustomer(sl()));
+  sl.registerLazySingleton(() => customer_usecases.GenerateCustomerCode(sl()));
+
+  // Repository
+  sl.registerLazySingleton<CustomerRepository>(
+    () => CustomerRepositoryImpl(localDataSource: sl()),
+  );
+
+  // Data sources
+  sl.registerLazySingleton<CustomerLocalDataSource>(
+    () => CustomerLocalDataSourceImpl(databaseHelper: sl()),
   );
 
   // ========== Core ==========

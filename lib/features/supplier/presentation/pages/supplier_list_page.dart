@@ -251,6 +251,7 @@ class _SupplierListPageState extends State<SupplierListPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'add_supplier_fab',
         onPressed: () async {
           final result = await Navigator.push(
             context,

@@ -6,7 +6,7 @@ import '../bloc/purchase_bloc.dart';
 import '../bloc/purchase_event.dart';
 import '../bloc/purchase_state.dart';
 import '../bloc/receiving_bloc.dart';
-import 'receiving_form_page.dart';
+import 'receiving_form_page_new.dart';
 import 'receiving_history_page.dart';
 
 class ReceivingListPage extends StatefulWidget {
@@ -176,7 +176,9 @@ class _ReceivingListPageState extends State<ReceivingListPage> {
                               BlocProvider(create: (_) => sl<PurchaseBloc>()),
                               BlocProvider(create: (_) => sl<ReceivingBloc>()),
                             ],
-                            child: ReceivingFormPage(purchase: state.purchase),
+                            child: ReceivingFormPageNew(
+                              purchase: state.purchase,
+                            ),
                           ),
                     ),
                   ).then((result) {

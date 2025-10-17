@@ -39,6 +39,21 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
     context.read<ReceivingBloc>().add(LoadReceivingById(widget.receivingId));
   }
 
+  double _calculateItemDiscount(ReceivingItem item) {
+    if (item.discountType == 'PERCENTAGE') {
+      return item.subtotal * (item.discount / 100);
+    }
+    return item.discount;
+  }
+
+  double _calculateItemTax(ReceivingItem item) {
+    final afterDiscount = item.subtotal - _calculateItemDiscount(item);
+    if (item.taxType == 'PERCENTAGE') {
+      return afterDiscount * (item.tax / 100);
+    }
+    return item.tax;
+  }
+
   void _navigateToReturnForm(BuildContext context, Receiving receiving) {
     Navigator.push(
       context,
@@ -140,11 +155,14 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400),
               columnWidths: {
-                0: const pw.FlexColumnWidth(1),
-                1: const pw.FlexColumnWidth(3),
-                2: const pw.FlexColumnWidth(1.5),
-                3: const pw.FlexColumnWidth(1.5),
-                4: const pw.FlexColumnWidth(2),
+                0: const pw.FlexColumnWidth(0.5),
+                1: const pw.FlexColumnWidth(2.5),
+                2: const pw.FlexColumnWidth(1),
+                3: const pw.FlexColumnWidth(1),
+                4: const pw.FlexColumnWidth(1.5),
+                5: const pw.FlexColumnWidth(1),
+                6: const pw.FlexColumnWidth(1),
+                7: const pw.FlexColumnWidth(1.5),
               },
               children: [
                 // Header
@@ -156,12 +174,36 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
                     _buildTableCell('Qty PO', isHeader: true),
                     _buildTableCell('Qty Terima', isHeader: true),
                     _buildTableCell('Harga', isHeader: true),
+                    _buildTableCell('Diskon', isHeader: true),
+                    _buildTableCell('PPN', isHeader: true),
+                    _buildTableCell('Total', isHeader: true),
                   ],
                 ),
                 // Items
                 ...receiving.items.asMap().entries.map((entry) {
                   final index = entry.key;
                   final item = entry.value;
+
+                  // Calculate discount and tax
+                  double discount = 0;
+                  if (item.discount > 0) {
+                    if (item.discountType == 'PERCENTAGE') {
+                      discount = item.subtotal * (item.discount / 100);
+                    } else {
+                      discount = item.discount;
+                    }
+                  }
+
+                  double tax = 0;
+                  if (item.tax > 0) {
+                    final afterDiscount = item.subtotal - discount;
+                    if (item.taxType == 'PERCENTAGE') {
+                      tax = afterDiscount * (item.tax / 100);
+                    } else {
+                      tax = item.tax;
+                    }
+                  }
+
                   return pw.TableRow(
                     children: [
                       _buildTableCell((index + 1).toString()),
@@ -180,6 +222,34 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
                           symbol: 'Rp ',
                           decimalDigits: 0,
                         ).format(item.receivedPrice),
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
+                        discount > 0
+                            ? NumberFormat.currency(
+                              locale: 'id_ID',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            ).format(discount)
+                            : '-',
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
+                        tax > 0
+                            ? NumberFormat.currency(
+                              locale: 'id_ID',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            ).format(tax)
+                            : '-',
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
+                        NumberFormat.currency(
+                          locale: 'id_ID',
+                          symbol: 'Rp ',
+                          decimalDigits: 0,
+                        ).format(item.total),
                         align: pw.TextAlign.right,
                       ),
                     ],
@@ -460,9 +530,67 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
                               'Diterima Oleh',
                               receiving.receivedBy ?? 'N/A',
                             ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Detail Penerimaan Card
+                    Card(
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.receipt_long,
+                                  color: Colors.blue.shade700,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Detail Pengiriman',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 20),
+                            _buildInfoItem(
+                              'Nomor Faktur',
+                              receiving.invoiceNumber ?? '-',
+                              icon: Icons.numbers,
+                            ),
+                            _buildInfoItem(
+                              'No. Surat Jalan',
+                              receiving.deliveryOrderNumber ?? '-',
+                              icon: Icons.local_shipping,
+                            ),
+                            _buildInfoItem(
+                              'Nomor Kendaraan',
+                              receiving.vehicleNumber ?? '-',
+                              icon: Icons.directions_car,
+                            ),
+                            _buildInfoItem(
+                              'Nama Sopir',
+                              receiving.driverName ?? '-',
+                              icon: Icons.person,
+                            ),
                             if (receiving.notes != null &&
-                                receiving.notes!.isNotEmpty)
-                              _buildInfoItem('Catatan', receiving.notes!),
+                                receiving.notes!.isNotEmpty) ...[
+                              const Divider(height: 20),
+                              _buildInfoItem(
+                                'Catatan',
+                                receiving.notes!,
+                                icon: Icons.note,
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -561,6 +689,50 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
                                     ],
                                   ),
                                 ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // Item calculation detail
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildItemDetailRow(
+                                      'Subtotal',
+                                      item.subtotal,
+                                    ),
+                                    if (item.discount > 0) ...[
+                                      const SizedBox(height: 4),
+                                      _buildItemDetailRow(
+                                        'Diskon ${item.discountType == "PERCENTAGE" ? "(${item.discount}%)" : ""}',
+                                        -_calculateItemDiscount(item),
+                                        color: Colors.red,
+                                      ),
+                                    ],
+                                    if (item.tax > 0) ...[
+                                      const SizedBox(height: 4),
+                                      _buildItemDetailRow(
+                                        'PPN ${item.taxType == "PERCENTAGE" ? "(${item.tax}%)" : ""}',
+                                        _calculateItemTax(item),
+                                        color: Colors.green,
+                                      ),
+                                    ],
+                                    const Divider(height: 16),
+                                    _buildItemDetailRow(
+                                      'Total',
+                                      item.total,
+                                      isBold: true,
+                                      color: Colors.blue,
+                                    ),
+                                  ],
+                                ),
                               ),
                               if (item.notes != null &&
                                   item.notes!.isNotEmpty) ...[
@@ -694,14 +866,18 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
     );
   }
 
-  Widget _buildInfoItem(String label, String value) {
+  Widget _buildInfoItem(String label, String value, {IconData? icon}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: Colors.grey.shade600),
+            const SizedBox(width: 8),
+          ],
           SizedBox(
-            width: 140,
+            width: icon != null ? 120 : 140,
             child: Text(
               label,
               style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
@@ -753,6 +929,39 @@ class _ReceivingDetailPageState extends State<ReceivingDetailPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildItemDetailRow(
+    String label,
+    double value, {
+    bool isBold = false,
+    Color? color,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            color: color ?? Colors.grey.shade700,
+          ),
+        ),
+        Text(
+          NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(value.abs()),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

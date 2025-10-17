@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import '../../../../injection_container.dart';
+import '../../domain/entities/receiving.dart';
 import '../bloc/purchase_bloc.dart';
 import '../bloc/purchase_event.dart';
 import '../bloc/purchase_state.dart';
@@ -10,7 +11,7 @@ import '../bloc/receiving_event.dart';
 import '../bloc/receiving_state.dart';
 import '../bloc/purchase_return_bloc.dart';
 import 'receiving_detail_page.dart';
-import 'receiving_form_page.dart';
+import 'receiving_form_page_new.dart';
 import 'purchase_return_list_page.dart';
 
 class ReceivingHistoryPage extends StatefulWidget {
@@ -23,6 +24,7 @@ class ReceivingHistoryPage extends StatefulWidget {
 class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
   final _searchController = TextEditingController();
   bool _isNavigatingToEdit = false;
+  Receiving? _receivingToEdit; // Store receiving data for edit
 
   @override
   void initState() {
@@ -154,31 +156,6 @@ class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
       body: Column(
         children: [
           // Return Management Button Banner
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder:
-                        (_) => BlocProvider(
-                          create: (_) => sl<PurchaseReturnBloc>(),
-                          child: const PurchaseReturnListPage(),
-                        ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.assignment_return),
-              label: const Text('Manajemen Return Pembelian'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ),
 
           // Search Bar
           Padding(
@@ -235,6 +212,7 @@ class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
                         _isNavigatingToEdit) {
                       // Hanya navigate ke edit form jika flag edit = true
                       final receiving = state.receiving;
+                      _receivingToEdit = receiving; // Store for later use
                       context.read<PurchaseBloc>().add(
                         LoadPurchaseById(receiving.purchaseId),
                       );
@@ -249,7 +227,7 @@ class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
                         _isNavigatingToEdit = false;
                       });
 
-                      // Navigate to receiving form for edit
+                      // Navigate to receiving form for edit with existing receiving data
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -263,8 +241,10 @@ class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
                                     value: context.read<PurchaseBloc>(),
                                   ),
                                 ],
-                                child: ReceivingFormPage(
+                                child: ReceivingFormPageNew(
                                   purchase: state.purchase,
+                                  existingReceiving:
+                                      _receivingToEdit, // Pass existing receiving
                                 ),
                               ),
                         ),
@@ -272,6 +252,8 @@ class _ReceivingHistoryPageState extends State<ReceivingHistoryPage> {
                         if (result == true) {
                           _loadReceivings();
                         }
+                        // Clear stored receiving
+                        _receivingToEdit = null;
                       });
                     }
                   },

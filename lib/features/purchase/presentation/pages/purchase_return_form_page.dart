@@ -117,61 +117,118 @@ class _PurchaseReturnFormPageState extends State<PurchaseReturnFormPage> {
 
     // Build return items with proper returnId
     final returnItems = <PurchaseReturnItem>[];
-    double subtotal = 0;
-    double itemDiscount = 0;
-    double itemTax = 0;
+    double subtotalAll = 0;
+    double itemDiscountAll = 0;
+    double itemTaxAll = 0;
+
+    // First pass: Calculate item-level discount and tax for each return item
+    final returnItemsTemp = <Map<String, dynamic>>[];
 
     for (var item in _receiving!.items) {
       final returnQty = _returnQuantities[item.id] ?? 0;
       if (returnQty > 0) {
         final proportion = returnQty / item.receivedQuantity;
         final itemSubtotal = returnQty * item.receivedPrice;
-        final itemDiscountAmount = item.discount * proportion;
-        final itemTaxAmount = item.tax * proportion;
-        final itemTotal = itemSubtotal - itemDiscountAmount + itemTaxAmount;
 
-        returnItems.add(
-          PurchaseReturnItem(
-            id: const Uuid().v4(),
-            returnId: returnId, // ✅ Use same returnId for all items
-            receivingItemId: item.id,
-            productId: item.productId,
-            productName: item.productName,
-            receivedQuantity: item.receivedQuantity,
-            returnQuantity: returnQty,
-            price: item.receivedPrice,
-            discount: itemDiscountAmount,
-            discountType: item.discountType,
-            tax: itemTaxAmount,
-            taxType: item.taxType,
-            subtotal: itemSubtotal,
-            total: itemTotal,
-            reason: _itemReasons[item.id],
-            createdAt: DateTime.now(),
-          ),
-        );
+        // Calculate item discount (proporsional dari receiving item)
+        double itemDiscountAmount = 0;
+        if (item.discountType == 'PERCENTAGE') {
+          itemDiscountAmount = itemSubtotal * (item.discount / 100);
+        } else {
+          itemDiscountAmount = item.discount * proportion;
+        }
 
-        subtotal += itemSubtotal;
-        itemDiscount += itemDiscountAmount;
-        itemTax += itemTaxAmount;
+        // Calculate item tax (proporsional dari receiving item)
+        final afterItemDiscount = itemSubtotal - itemDiscountAmount;
+        double itemTaxAmount = 0;
+        if (item.taxType == 'PERCENTAGE') {
+          itemTaxAmount = afterItemDiscount * (item.tax / 100);
+        } else {
+          itemTaxAmount = item.tax * proportion;
+        }
+
+        returnItemsTemp.add({
+          'receivingItem': item,
+          'returnQty': returnQty,
+          'itemSubtotal': itemSubtotal,
+          'itemDiscountAmount': itemDiscountAmount,
+          'itemTaxAmount': itemTaxAmount,
+        });
+
+        subtotalAll += itemSubtotal;
+        itemDiscountAll += itemDiscountAmount;
+        itemTaxAll += itemTaxAmount;
       }
     }
 
-    // Calculate proportional total discount and tax
-    final totalItemsValue = _receiving!.items.fold<double>(
+    // Calculate total discount and tax per item based on subtotal proportion
+    // Hitung total subtotal dari receiving (untuk proporsi diskon total)
+    final receivingSubtotalAll = _receiving!.items.fold<double>(
       0,
       (sum, item) => sum + (item.receivedQuantity * item.receivedPrice),
     );
-    final returnedItemsValue = subtotal;
-    final proportion = returnedItemsValue / totalItemsValue;
 
-    final totalDiscount = _receiving!.totalDiscount * proportion;
-    final totalTax = _receiving!.totalTax * proportion;
+    // Hitung proporsi diskon total dan PPN total yang harus di-return
+    final totalDiscountToDistribute =
+        _receiving!.totalDiscount * (subtotalAll / receivingSubtotalAll);
+    final totalTaxToDistribute =
+        _receiving!.totalTax * (subtotalAll / receivingSubtotalAll);
 
-    final total = subtotal - itemDiscount - totalDiscount + itemTax + totalTax;
+    // Second pass: Distribute total discount and tax proportionally to each item
+    double totalDiscount = 0;
+    double totalTax = 0;
+
+    for (var tempItem in returnItemsTemp) {
+      final item = tempItem['receivingItem'] as ReceivingItem;
+      final returnQty = tempItem['returnQty'] as int;
+      final itemSubtotal = tempItem['itemSubtotal'] as double;
+      final itemDiscountAmount = tempItem['itemDiscountAmount'] as double;
+      final itemTaxAmount = tempItem['itemTaxAmount'] as double;
+
+      // Hitung proporsi diskon total dan PPN total untuk item ini
+      // Berdasarkan proporsi subtotal item terhadap total subtotal return
+      final itemProportion = subtotalAll > 0 ? (itemSubtotal / subtotalAll) : 0;
+      final itemTotalDiscount = totalDiscountToDistribute * itemProportion;
+      final itemTotalTax = totalTaxToDistribute * itemProportion;
+
+      totalDiscount += itemTotalDiscount;
+      totalTax += itemTotalTax;
+
+      // Calculate final total for this item
+      final itemTotal =
+          itemSubtotal -
+          itemDiscountAmount -
+          itemTotalDiscount +
+          itemTaxAmount +
+          itemTotalTax;
+
+      returnItems.add(
+        PurchaseReturnItem(
+          id: const Uuid().v4(),
+          returnId: returnId,
+          receivingItemId: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          receivedQuantity: item.receivedQuantity,
+          returnQuantity: returnQty,
+          price: item.receivedPrice,
+          discount: itemDiscountAmount,
+          discountType: item.discountType,
+          tax: itemTaxAmount,
+          taxType: item.taxType,
+          subtotal: itemSubtotal,
+          total: itemTotal,
+          reason: _itemReasons[item.id],
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
+    final total =
+        subtotalAll - itemDiscountAll - totalDiscount + itemTaxAll + totalTax;
 
     final purchaseReturn = PurchaseReturn(
-      id: returnId, // ✅ Use same returnId
+      id: returnId,
       returnNumber: _returnNumber,
       receivingId: _receiving!.id,
       receivingNumber: _receiving!.receivingNumber,
@@ -180,9 +237,9 @@ class _PurchaseReturnFormPageState extends State<PurchaseReturnFormPage> {
       supplierId: _receiving!.supplierId,
       supplierName: _receiving!.supplierName,
       returnDate: _returnDate,
-      subtotal: subtotal,
-      itemDiscount: itemDiscount,
-      itemTax: itemTax,
+      subtotal: subtotalAll,
+      itemDiscount: itemDiscountAll,
+      itemTax: itemTaxAll,
       totalDiscount: totalDiscount,
       totalTax: totalTax,
       total: total,
@@ -192,7 +249,7 @@ class _PurchaseReturnFormPageState extends State<PurchaseReturnFormPage> {
       processedBy: _processedByController.text.trim(),
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
-      items: returnItems, // ✅ Use items as-is (no need to copyWith)
+      items: returnItems,
     );
 
     context.read<PurchaseReturnBloc>().add(

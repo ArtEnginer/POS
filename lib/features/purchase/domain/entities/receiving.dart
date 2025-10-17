@@ -8,6 +8,10 @@ class Receiving extends Equatable {
   final String? supplierId;
   final String? supplierName;
   final DateTime receivingDate;
+  final String? invoiceNumber; // Nomor Faktur dari supplier
+  final String? deliveryOrderNumber; // Nomor Surat Jalan
+  final String? vehicleNumber; // Nomor Kendaraan pengiriman
+  final String? driverName; // Nama Sopir
   final double subtotal;
   final double itemDiscount; // Total discount dari semua item
   final double itemTax; // Total tax dari semua item
@@ -30,6 +34,10 @@ class Receiving extends Equatable {
     this.supplierId,
     this.supplierName,
     required this.receivingDate,
+    this.invoiceNumber,
+    this.deliveryOrderNumber,
+    this.vehicleNumber,
+    this.driverName,
     required this.subtotal,
     this.itemDiscount = 0,
     this.itemTax = 0,
@@ -53,6 +61,10 @@ class Receiving extends Equatable {
     String? supplierId,
     String? supplierName,
     DateTime? receivingDate,
+    String? invoiceNumber,
+    String? deliveryOrderNumber,
+    String? vehicleNumber,
+    String? driverName,
     double? subtotal,
     double? itemDiscount,
     double? itemTax,
@@ -75,6 +87,10 @@ class Receiving extends Equatable {
       supplierId: supplierId ?? this.supplierId,
       supplierName: supplierName ?? this.supplierName,
       receivingDate: receivingDate ?? this.receivingDate,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      deliveryOrderNumber: deliveryOrderNumber ?? this.deliveryOrderNumber,
+      vehicleNumber: vehicleNumber ?? this.vehicleNumber,
+      driverName: driverName ?? this.driverName,
       subtotal: subtotal ?? this.subtotal,
       itemDiscount: itemDiscount ?? this.itemDiscount,
       itemTax: itemTax ?? this.itemTax,
@@ -100,6 +116,10 @@ class Receiving extends Equatable {
     supplierId,
     supplierName,
     receivingDate,
+    invoiceNumber,
+    deliveryOrderNumber,
+    vehicleNumber,
+    driverName,
     subtotal,
     itemDiscount,
     itemTax,

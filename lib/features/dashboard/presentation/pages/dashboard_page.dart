@@ -3,12 +3,18 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../../injection_container.dart';
+import '../../../product/presentation/bloc/product_bloc.dart';
 import '../../../product/presentation/pages/product_list_page.dart';
 import '../../../purchase/presentation/bloc/purchase_bloc.dart';
 import '../../../purchase/presentation/pages/purchase_list_page.dart';
 import '../../../purchase/presentation/pages/receiving_list_page.dart';
+import '../../../sales/presentation/bloc/sale_bloc.dart';
+import '../../../sales/presentation/pages/pos_page.dart';
+import '../../../sales/presentation/pages/sale_list_page.dart';
 import '../../../supplier/presentation/bloc/supplier_bloc.dart';
 import '../../../supplier/presentation/pages/supplier_list_page.dart';
+import '../../../customer/presentation/bloc/customer_bloc.dart';
+import '../../../customer/presentation/pages/customer_list_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -19,60 +25,54 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
+  late final List<Widget> _pages;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize pages once
+    _pages = [
+      MultiBlocProvider(
+        providers: [
+          BlocProvider(create: (_) => sl<ProductBloc>()),
+          BlocProvider(create: (_) => sl<SaleBloc>()),
+          BlocProvider(create: (_) => sl<CustomerBloc>()),
+        ],
+        child: const POSPage(),
+      ),
+      const ProductListPage(),
+      BlocProvider(
+        create: (_) => sl<CustomerBloc>(),
+        child: const CustomerListPage(),
+      ),
+      BlocProvider(
+        create: (_) => sl<SupplierBloc>(),
+        child: const SupplierListPage(),
+      ),
+      BlocProvider(
+        create: (_) => sl<PurchaseBloc>(),
+        child: const PurchaseListPage(),
+      ),
+      BlocProvider(
+        create: (_) => sl<PurchaseBloc>(),
+        child: const ReceivingListPage(),
+      ),
+      BlocProvider(create: (_) => sl<SaleBloc>(), child: const SaleListPage()),
+      const ReportsPage(),
+      const SettingsPage(),
+    ];
+  }
 
   final List<_NavItem> _navItems = [
-    _NavItem(
-      icon: Icons.point_of_sale,
-      label: 'Kasir',
-      pageBuilder: () => const CashierPage(),
-    ),
-    _NavItem(
-      icon: Icons.inventory_2_outlined,
-      label: 'Produk',
-      pageBuilder: () => const ProductListPage(),
-    ),
-    _NavItem(
-      icon: Icons.business_outlined,
-      label: 'Supplier',
-      pageBuilder:
-          () => BlocProvider(
-            create: (_) => sl<SupplierBloc>(),
-            child: const SupplierListPage(),
-          ),
-    ),
-    _NavItem(
-      icon: Icons.shopping_cart_outlined,
-      label: 'Pembelian',
-      pageBuilder:
-          () => BlocProvider(
-            create: (_) => sl<PurchaseBloc>(),
-            child: const PurchaseListPage(),
-          ),
-    ),
-    _NavItem(
-      icon: Icons.move_to_inbox,
-      label: 'Receiving',
-      pageBuilder:
-          () => BlocProvider(
-            create: (_) => sl<PurchaseBloc>(),
-            child: const ReceivingListPage(),
-          ),
-    ),
-    _NavItem(
-      icon: Icons.receipt_long,
-      label: 'Transaksi',
-      pageBuilder: () => const TransactionsPage(),
-    ),
-    _NavItem(
-      icon: Icons.analytics_outlined,
-      label: 'Laporan',
-      pageBuilder: () => const ReportsPage(),
-    ),
-    _NavItem(
-      icon: Icons.settings_outlined,
-      label: 'Pengaturan',
-      pageBuilder: () => const SettingsPage(),
-    ),
+    _NavItem(icon: Icons.point_of_sale, label: 'Kasir'),
+    _NavItem(icon: Icons.inventory_2_outlined, label: 'Produk'),
+    _NavItem(icon: Icons.people_outline, label: 'Customer'),
+    _NavItem(icon: Icons.business_outlined, label: 'Supplier'),
+    _NavItem(icon: Icons.shopping_cart_outlined, label: 'Pembelian'),
+    _NavItem(icon: Icons.move_to_inbox, label: 'Receiving'),
+    _NavItem(icon: Icons.receipt_long, label: 'Transaksi'),
+    _NavItem(icon: Icons.analytics_outlined, label: 'Laporan'),
+    _NavItem(icon: Icons.settings_outlined, label: 'Pengaturan'),
   ];
 
   @override
@@ -115,7 +115,9 @@ class _DashboardPageState extends State<DashboardPage> {
                       )
                       .toList(),
             ),
-          Expanded(child: _navItems[_selectedIndex].pageBuilder()),
+          Expanded(
+            child: IndexedStack(index: _selectedIndex, children: _pages),
+          ),
         ],
       ),
       bottomNavigationBar:
@@ -149,13 +151,8 @@ class _DashboardPageState extends State<DashboardPage> {
 class _NavItem {
   final IconData icon;
   final String label;
-  final Widget Function() pageBuilder;
 
-  _NavItem({
-    required this.icon,
-    required this.label,
-    required this.pageBuilder,
-  });
+  _NavItem({required this.icon, required this.label});
 }
 
 // Placeholder pages - akan kita develop nanti

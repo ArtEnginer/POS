@@ -38,6 +38,21 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
     );
   }
 
+  double _calculateItemDiscount(PurchaseReturnItem item) {
+    if (item.discountType == 'PERCENTAGE') {
+      return item.subtotal * (item.discount / 100);
+    }
+    return item.discount;
+  }
+
+  double _calculateItemTax(PurchaseReturnItem item) {
+    final afterDiscount = item.subtotal - _calculateItemDiscount(item);
+    if (item.taxType == 'PERCENTAGE') {
+      return afterDiscount * (item.tax / 100);
+    }
+    return item.tax;
+  }
+
   Future<void> _printReturn(PurchaseReturn returnData) async {
     final pdf = await _generatePdf(returnData);
 
@@ -121,38 +136,29 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
 
             // Reason Box
             if (returnData.reason != null && returnData.reason!.isNotEmpty)
-              pw.Container(
-                padding: const pw.EdgeInsets.all(12),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: PdfColors.orange),
-                  borderRadius: const pw.BorderRadius.all(
-                    pw.Radius.circular(4),
-                  ),
-                ),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      'Alasan Return:',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                    ),
-                    pw.SizedBox(height: 4),
-                    pw.Text(returnData.reason!),
-                  ],
+              // Items Table Header
+              pw.Text(
+                'Detail Barang yang Di-return',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
                 ),
               ),
-            pw.SizedBox(height: 20),
-
-            // Items Table Header
-            pw.Text(
-              'Detail Barang yang Di-return',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-            ),
             pw.SizedBox(height: 8),
 
             // Items Table
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey400),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(0.5),
+                1: const pw.FlexColumnWidth(2.5),
+                2: const pw.FlexColumnWidth(1),
+                3: const pw.FlexColumnWidth(1),
+                4: const pw.FlexColumnWidth(1.5),
+                5: const pw.FlexColumnWidth(1),
+                6: const pw.FlexColumnWidth(1),
+                7: const pw.FlexColumnWidth(1.5),
+              },
               children: [
                 // Header
                 pw.TableRow(
@@ -176,7 +182,17 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
                       align: pw.TextAlign.right,
                     ),
                     _buildTableCell(
-                      'Subtotal',
+                      'Diskon',
+                      isHeader: true,
+                      align: pw.TextAlign.right,
+                    ),
+                    _buildTableCell(
+                      'PPN',
+                      isHeader: true,
+                      align: pw.TextAlign.right,
+                    ),
+                    _buildTableCell(
+                      'Total',
                       isHeader: true,
                       align: pw.TextAlign.right,
                     ),
@@ -186,6 +202,27 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
                 ...returnData.items.asMap().entries.map((entry) {
                   final index = entry.key;
                   final item = entry.value;
+
+                  // Calculate discount and tax
+                  double discount = 0;
+                  if (item.discount > 0) {
+                    if (item.discountType == 'PERCENTAGE') {
+                      discount = item.subtotal * (item.discount / 100);
+                    } else {
+                      discount = item.discount;
+                    }
+                  }
+
+                  double tax = 0;
+                  if (item.tax > 0) {
+                    final afterDiscount = item.subtotal - discount;
+                    if (item.taxType == 'PERCENTAGE') {
+                      tax = afterDiscount * (item.tax / 100);
+                    } else {
+                      tax = item.tax;
+                    }
+                  }
+
                   return pw.TableRow(
                     children: [
                       _buildTableCell('${index + 1}'),
@@ -207,11 +244,31 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
                         align: pw.TextAlign.right,
                       ),
                       _buildTableCell(
+                        discount > 0
+                            ? NumberFormat.currency(
+                              locale: 'id_ID',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            ).format(discount)
+                            : '-',
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
+                        tax > 0
+                            ? NumberFormat.currency(
+                              locale: 'id_ID',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            ).format(tax)
+                            : '-',
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
                         NumberFormat.currency(
                           locale: 'id_ID',
                           symbol: 'Rp ',
                           decimalDigits: 0,
-                        ).format(item.subtotal),
+                        ).format(item.total),
                         align: pw.TextAlign.right,
                       ),
                     ],
@@ -716,18 +773,49 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    'Subtotal: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(item.subtotal)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
+                              const SizedBox(height: 12),
+
+                              // Item calculation detail
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
                                   ),
-                                ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildItemDetailRow(
+                                      'Subtotal',
+                                      item.subtotal,
+                                    ),
+                                    if (item.discount > 0) ...[
+                                      const SizedBox(height: 4),
+                                      _buildItemDetailRow(
+                                        'Diskon ${item.discountType == "PERCENTAGE" ? "(${item.discount}%)" : ""}',
+                                        -_calculateItemDiscount(item),
+                                        color: Colors.red,
+                                      ),
+                                    ],
+                                    if (item.tax > 0) ...[
+                                      const SizedBox(height: 4),
+                                      _buildItemDetailRow(
+                                        'PPN ${item.taxType == "PERCENTAGE" ? "(${item.tax}%)" : ""}',
+                                        _calculateItemTax(item),
+                                        color: Colors.green,
+                                      ),
+                                    ],
+                                    const Divider(height: 16),
+                                    _buildItemDetailRow(
+                                      'Total',
+                                      item.total,
+                                      isBold: true,
+                                      color: Colors.orange.shade700,
+                                    ),
+                                  ],
+                                ),
                               ),
                               if (item.reason != null &&
                                   item.reason!.isNotEmpty) ...[
@@ -921,6 +1009,39 @@ class _PurchaseReturnDetailPageState extends State<PurchaseReturnDetailPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildItemDetailRow(
+    String label,
+    double value, {
+    bool isBold = false,
+    Color? color,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            color: color ?? Colors.grey.shade700,
+          ),
+        ),
+        Text(
+          NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(value.abs()),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

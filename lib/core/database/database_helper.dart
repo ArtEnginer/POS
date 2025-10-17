@@ -138,13 +138,14 @@ class DatabaseHelper {
       )
     ''');
 
-    // Transactions Table
+    // Transactions Table (Sales)
     await db.execute('''
       CREATE TABLE transactions (
         id TEXT PRIMARY KEY,
         transaction_number TEXT UNIQUE NOT NULL,
         customer_id TEXT,
         cashier_id TEXT NOT NULL,
+        cashier_name TEXT NOT NULL,
         subtotal REAL NOT NULL,
         tax REAL NOT NULL DEFAULT 0,
         discount REAL NOT NULL DEFAULT 0,
@@ -267,6 +268,10 @@ class DatabaseHelper {
         supplier_id TEXT,
         supplier_name TEXT,
         receiving_date TEXT NOT NULL,
+        invoice_number TEXT,
+        delivery_order_number TEXT,
+        vehicle_number TEXT,
+        driver_name TEXT,
         subtotal REAL NOT NULL,
         item_discount REAL NOT NULL DEFAULT 0,
         item_tax REAL NOT NULL DEFAULT 0,
@@ -740,6 +745,37 @@ class DatabaseHelper {
       );
       await db.execute(
         'CREATE INDEX idx_purchase_return_items_product ON purchase_return_items(product_id)',
+      );
+    }
+
+    if (oldVersion < 7) {
+      // Add receiving detail fields
+      await db.execute('ALTER TABLE receivings ADD COLUMN invoice_number TEXT');
+      await db.execute(
+        'ALTER TABLE receivings ADD COLUMN delivery_order_number TEXT',
+      );
+      await db.execute('ALTER TABLE receivings ADD COLUMN vehicle_number TEXT');
+      await db.execute('ALTER TABLE receivings ADD COLUMN driver_name TEXT');
+
+      // Create index for invoice_number for faster search
+      await db.execute(
+        'CREATE INDEX idx_receivings_invoice ON receivings(invoice_number)',
+      );
+    }
+
+    if (oldVersion < 8) {
+      // Add cashier_name to transactions table if it doesn't exist
+      try {
+        await db.execute(
+          'ALTER TABLE transactions ADD COLUMN cashier_name TEXT',
+        );
+      } catch (e) {
+        // Column might already exist, ignore error
+      }
+
+      // Set default value for existing records
+      await db.execute(
+        'UPDATE transactions SET cashier_name = "Kasir" WHERE cashier_name IS NULL',
       );
     }
   }
