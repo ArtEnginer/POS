@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
-import '../../../../injection_container.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
+import '../../../../core/widgets/connection_status_indicator.dart';
+import '../../../../injection_container.dart' as di;
 import '../../../product/presentation/bloc/product_bloc.dart';
 import '../../../customer/presentation/bloc/customer_bloc.dart';
 import '../../domain/entities/sale.dart';
@@ -44,10 +46,22 @@ class _SaleListPageState extends State<SaleListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hybridSyncManager = di.sl<HybridSyncManager>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Riwayat Transaksi'),
         actions: [
+          // Status Koneksi Online/Offline
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+            child: StreamConnectionStatusIndicator(
+              syncManager: hybridSyncManager,
+              showLabel: true,
+              iconSize: 20,
+              fontSize: 11,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadSales,
@@ -64,9 +78,9 @@ class _SaleListPageState extends State<SaleListPage> {
               builder:
                   (context) => MultiBlocProvider(
                     providers: [
-                      BlocProvider(create: (_) => sl<ProductBloc>()),
-                      BlocProvider(create: (_) => sl<SaleBloc>()),
-                      BlocProvider(create: (_) => sl<CustomerBloc>()),
+                      BlocProvider(create: (_) => di.sl<ProductBloc>()),
+                      BlocProvider(create: (_) => di.sl<SaleBloc>()),
+                      BlocProvider(create: (_) => di.sl<CustomerBloc>()),
                     ],
                     child: const POSPage(),
                   ),
@@ -304,7 +318,8 @@ class _SaleListPageState extends State<SaleListPage> {
             MaterialPageRoute(
               builder:
                   (context) => BlocProvider(
-                    create: (_) => sl<SaleBloc>()..add(LoadSaleById(sale.id)),
+                    create:
+                        (_) => di.sl<SaleBloc>()..add(LoadSaleById(sale.id)),
                     child: const SaleDetailPage(),
                   ),
             ),

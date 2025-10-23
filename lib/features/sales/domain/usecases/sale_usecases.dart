@@ -1,6 +1,7 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../entities/sale.dart';
+import '../entities/pending_sale.dart';
 import '../repositories/sale_repository.dart';
 
 class GetAllSales {
@@ -93,5 +94,56 @@ class GetDailySummary {
 
   Future<Either<Failure, Map<String, dynamic>>> call(DateTime date) async {
     return await repository.getDailySummary(date);
+  }
+}
+
+// Pending Sale Use Cases
+class SavePendingSale {
+  final SaleRepository repository;
+
+  SavePendingSale(this.repository);
+
+  Future<Either<Failure, PendingSale>> call(PendingSale pendingSale) async {
+    return await repository.savePendingSale(pendingSale);
+  }
+}
+
+class GetPendingSales {
+  final SaleRepository repository;
+
+  GetPendingSales(this.repository);
+
+  Future<Either<Failure, List<PendingSale>>> call() async {
+    return await repository.getPendingSales();
+  }
+}
+
+class GetPendingSaleById {
+  final SaleRepository repository;
+
+  GetPendingSaleById(this.repository);
+
+  Future<Either<Failure, PendingSale>> call(String id) async {
+    return await repository.getPendingSaleById(id);
+  }
+}
+
+class DeletePendingSale {
+  final SaleRepository repository;
+
+  DeletePendingSale(this.repository);
+
+  Future<Either<Failure, void>> call(String id) async {
+    return await repository.deletePendingSale(id);
+  }
+}
+
+class GeneratePendingNumber {
+  final SaleRepository repository;
+
+  GeneratePendingNumber(this.repository);
+
+  Future<Either<Failure, String>> call() async {
+    return await repository.generatePendingNumber();
   }
 }

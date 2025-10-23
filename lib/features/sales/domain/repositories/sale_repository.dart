@@ -1,6 +1,7 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/failures.dart';
 import '../entities/sale.dart';
+import '../entities/pending_sale.dart';
 
 abstract class SaleRepository {
   Future<Either<Failure, List<Sale>>> getAllSales();
@@ -15,4 +16,11 @@ abstract class SaleRepository {
   Future<Either<Failure, void>> deleteSale(String id);
   Future<Either<Failure, String>> generateSaleNumber();
   Future<Either<Failure, Map<String, dynamic>>> getDailySummary(DateTime date);
+
+  // Pending transaction methods
+  Future<Either<Failure, PendingSale>> savePendingSale(PendingSale pendingSale);
+  Future<Either<Failure, List<PendingSale>>> getPendingSales();
+  Future<Either<Failure, PendingSale>> getPendingSaleById(String id);
+  Future<Either<Failure, void>> deletePendingSale(String id);
+  Future<Either<Failure, String>> generatePendingNumber();
 }

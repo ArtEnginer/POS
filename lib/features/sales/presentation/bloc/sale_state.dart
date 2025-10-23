@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/sale.dart';
+import '../../domain/entities/pending_sale.dart';
 
 abstract class SaleState extends Equatable {
   const SaleState();
@@ -69,4 +70,42 @@ class SaleError extends SaleState {
 
   @override
   List<Object> get props => [message];
+}
+
+// Pending Sale States
+class PendingSaleOperationSuccess extends SaleState {
+  final String message;
+  final PendingSale? pendingSale;
+
+  const PendingSaleOperationSuccess(this.message, [this.pendingSale]);
+
+  @override
+  List<Object?> get props => [message, pendingSale];
+}
+
+class PendingSalesLoaded extends SaleState {
+  final List<PendingSale> pendingSales;
+
+  const PendingSalesLoaded(this.pendingSales);
+
+  @override
+  List<Object> get props => [pendingSales];
+}
+
+class PendingSaleLoaded extends SaleState {
+  final PendingSale pendingSale;
+
+  const PendingSaleLoaded(this.pendingSale);
+
+  @override
+  List<Object> get props => [pendingSale];
+}
+
+class PendingNumberGenerated extends SaleState {
+  final String number;
+
+  const PendingNumberGenerated(this.number);
+
+  @override
+  List<Object> get props => [number];
 }

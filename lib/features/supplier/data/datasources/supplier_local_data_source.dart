@@ -1,5 +1,5 @@
-import 'package:sqflite/sqflite.dart';
 import '../../../../core/database/database_helper.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/supplier_model.dart';
 
@@ -20,8 +20,12 @@ abstract class SupplierLocalDataSource {
 
 class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   final DatabaseHelper databaseHelper;
+  final HybridSyncManager hybridSyncManager;
 
-  SupplierLocalDataSourceImpl({required this.databaseHelper});
+  SupplierLocalDataSourceImpl({
+    required this.databaseHelper,
+    required this.hybridSyncManager,
+  });
 
   @override
   Future<List<SupplierModel>> getSuppliers({
@@ -95,12 +99,11 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   @override
   Future<void> insertSupplier(SupplierModel supplier) async {
     try {
-      final db = await databaseHelper.database;
-
-      await db.insert(
+      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
+      await hybridSyncManager.insertRecord(
         'suppliers',
         supplier.toJson(),
-        conflictAlgorithm: ConflictAlgorithm.abort,
+        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
     } catch (e) {
       throw app_exceptions.DatabaseException(
@@ -112,13 +115,13 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   @override
   Future<void> updateSupplier(SupplierModel supplier) async {
     try {
-      final db = await databaseHelper.database;
-
-      await db.update(
+      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
+      await hybridSyncManager.updateRecord(
         'suppliers',
         supplier.toJson(),
         where: 'id = ?',
         whereArgs: [supplier.id],
+        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
     } catch (e) {
       throw app_exceptions.DatabaseException(
@@ -130,14 +133,15 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   @override
   Future<void> deleteSupplier(String id) async {
     try {
-      final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
-      await db.update(
+      // ✅ AUTO SYNC: Soft delete ke local DAN sync ke server jika online
+      await hybridSyncManager.updateRecord(
         'suppliers',
         {'deleted_at': now, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
+        syncImmediately: true,
       );
     } catch (e) {
       throw app_exceptions.DatabaseException(

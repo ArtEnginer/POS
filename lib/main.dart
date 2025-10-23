@@ -7,6 +7,10 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
+import 'core/database/mysql_connector.dart';
+import 'core/database/mysql_config_manager.dart';
+import 'core/database/hybrid_sync_manager.dart';
+import 'core/database/sync_status_migration.dart';
 import 'injection_container.dart' as di;
 import 'features/dashboard/presentation/pages/dashboard_page.dart';
 
@@ -39,6 +43,34 @@ void main() async {
 
   // Initialize dependencies
   await di.init();
+
+  // Run database migration for sync_status column
+  try {
+    final migration = di.sl<SyncStatusMigration>();
+    await migration.migrateAll();
+    print('Database migration completed successfully');
+  } catch (e) {
+    print('Database migration error: $e');
+  }
+
+  // Initialize MySQL hybrid sync if configured
+  try {
+    final mysqlConfigManager = di.sl<MySQLConfigManager>();
+    if (mysqlConfigManager.isEnabled) {
+      final config = await mysqlConfigManager.getConfig();
+      if (config != null) {
+        final mysqlConnector = di.sl<MySQLConnector>();
+        await mysqlConnector.initialize(config);
+
+        final hybridSyncManager = di.sl<HybridSyncManager>();
+        await hybridSyncManager.updateSyncMode();
+        hybridSyncManager.startAutoSync();
+      }
+    }
+  } catch (e) {
+    // Silently fail if MySQL not configured
+    print('MySQL sync not initialized: $e');
+  }
 
   runApp(const MyApp());
 }

@@ -1,6 +1,6 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/database/database_helper.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/purchase_return_model.dart';
 
@@ -24,8 +24,12 @@ abstract class PurchaseReturnLocalDataSource {
 class PurchaseReturnLocalDataSourceImpl
     implements PurchaseReturnLocalDataSource {
   final DatabaseHelper databaseHelper;
+  final HybridSyncManager hybridSyncManager;
 
-  PurchaseReturnLocalDataSourceImpl({required this.databaseHelper});
+  PurchaseReturnLocalDataSourceImpl({
+    required this.databaseHelper,
+    required this.hybridSyncManager,
+  });
 
   @override
   Future<List<PurchaseReturnModel>> getAllPurchaseReturns() async {
@@ -151,37 +155,53 @@ class PurchaseReturnLocalDataSourceImpl
     PurchaseReturnModel purchaseReturn,
   ) async {
     try {
+      // ✅ AUTO SYNC: Insert purchase return header ke local DAN sync ke server
+      await hybridSyncManager.insertRecord(
+        'purchase_returns',
+        purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
+        syncImmediately: true,
+      );
+
+      // ✅ AUTO SYNC: Insert purchase return items ke local DAN sync ke server
+      for (var item in purchaseReturn.items) {
+        final itemModel = PurchaseReturnItemModel.fromEntity(item);
+        await hybridSyncManager.insertRecord(
+          'purchase_return_items',
+          itemModel.toJson(),
+          syncImmediately: true,
+        );
+      }
+
       final db = await databaseHelper.database;
 
-      await db.transaction((txn) async {
-        // 1. Insert purchase return header (without items)
-        await txn.insert(
-          'purchase_returns',
-          purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
-          conflictAlgorithm: ConflictAlgorithm.abort,
-        );
-
-        // 2. Insert purchase return items
+      // 3. Update stock if status is COMPLETED menggunakan HybridSyncManager
+      if (purchaseReturn.status == 'COMPLETED') {
+        final now = DateTime.now().toIso8601String();
         for (var item in purchaseReturn.items) {
-          final itemModel = PurchaseReturnItemModel.fromEntity(item);
-          await txn.insert(
-            'purchase_return_items',
-            itemModel.toJson(),
-            conflictAlgorithm: ConflictAlgorithm.abort,
+          // Get current stock
+          final productResult = await db.query(
+            'products',
+            columns: ['stock'],
+            where: 'id = ?',
+            whereArgs: [item.productId],
+            limit: 1,
           );
-        }
 
-        // 3. Update stock if status is COMPLETED
-        if (purchaseReturn.status == 'COMPLETED') {
-          for (var item in purchaseReturn.items) {
-            await _updateProductStock(
-              txn,
-              item.productId,
-              -item.returnQuantity,
+          if (productResult.isNotEmpty) {
+            final currentStock = productResult.first['stock'] as int;
+            final newStock = currentStock - item.returnQuantity;
+
+            // Update via HybridSyncManager untuk auto-sync
+            await hybridSyncManager.updateRecord(
+              'products',
+              {'stock': newStock, 'updated_at': now},
+              where: 'id = ?',
+              whereArgs: [item.productId],
+              syncImmediately: true,
             );
           }
         }
-      });
+      }
 
       return await getPurchaseReturnById(purchaseReturn.id);
     } catch (e) {
@@ -196,56 +216,100 @@ class PurchaseReturnLocalDataSourceImpl
     PurchaseReturnModel purchaseReturn,
   ) async {
     try {
-      final db = await databaseHelper.database;
-
       // Get old data for stock adjustment
       final oldReturn = await getPurchaseReturnById(purchaseReturn.id);
 
-      await db.transaction((txn) async {
-        // 1. Update purchase return header (without items)
-        await txn.update(
-          'purchase_returns',
-          purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
-          where: 'id = ?',
-          whereArgs: [purchaseReturn.id],
-        );
+      // ✅ AUTO SYNC: Update purchase return header ke local DAN sync ke server
+      await hybridSyncManager.updateRecord(
+        'purchase_returns',
+        purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
+        where: 'id = ?',
+        whereArgs: [purchaseReturn.id],
+        syncImmediately: true,
+      );
 
-        // 2. Delete old items
-        await txn.delete(
+      final db = await databaseHelper.database;
+
+      // ✅ AUTO SYNC: Delete old items dari local DAN sync ke server
+      final oldItems = await db.query(
+        'purchase_return_items',
+        where: 'return_id = ?',
+        whereArgs: [purchaseReturn.id],
+      );
+
+      for (var oldItem in oldItems) {
+        await hybridSyncManager.deleteRecord(
           'purchase_return_items',
-          where: 'return_id = ?',
-          whereArgs: [purchaseReturn.id],
+          where: 'id = ?',
+          whereArgs: [oldItem['id']],
+          syncImmediately: true,
         );
+      }
 
-        // 3. Insert new items
-        for (var item in purchaseReturn.items) {
-          final itemModel = PurchaseReturnItemModel.fromEntity(item);
-          await txn.insert(
-            'purchase_return_items',
-            itemModel.toJson(),
-            conflictAlgorithm: ConflictAlgorithm.abort,
+      // ✅ AUTO SYNC: Insert new items ke local DAN sync ke server
+      for (var item in purchaseReturn.items) {
+        final itemModel = PurchaseReturnItemModel.fromEntity(item);
+        await hybridSyncManager.insertRecord(
+          'purchase_return_items',
+          itemModel.toJson(),
+          syncImmediately: true,
+        );
+      }
+
+      // 4. Adjust stock if needed menggunakan HybridSyncManager
+      final now = DateTime.now().toIso8601String();
+
+      // Reverse old stock adjustment if it was COMPLETED
+      if (oldReturn.status == 'COMPLETED') {
+        for (var item in oldReturn.items) {
+          final productResult = await db.query(
+            'products',
+            columns: ['stock'],
+            where: 'id = ?',
+            whereArgs: [item.productId],
+            limit: 1,
           );
-        }
 
-        // 4. Adjust stock if needed
-        // Reverse old stock adjustment if it was COMPLETED
-        if (oldReturn.status == 'COMPLETED') {
-          for (var item in oldReturn.items) {
-            await _updateProductStock(txn, item.productId, item.returnQuantity);
-          }
-        }
+          if (productResult.isNotEmpty) {
+            final currentStock = productResult.first['stock'] as int;
+            final newStock = currentStock + item.returnQuantity;
 
-        // Apply new stock adjustment if status is COMPLETED
-        if (purchaseReturn.status == 'COMPLETED') {
-          for (var item in purchaseReturn.items) {
-            await _updateProductStock(
-              txn,
-              item.productId,
-              -item.returnQuantity,
+            await hybridSyncManager.updateRecord(
+              'products',
+              {'stock': newStock, 'updated_at': now},
+              where: 'id = ?',
+              whereArgs: [item.productId],
+              syncImmediately: true,
             );
           }
         }
-      });
+      }
+
+      // Apply new stock adjustment if status is COMPLETED
+      if (purchaseReturn.status == 'COMPLETED') {
+        for (var item in purchaseReturn.items) {
+          final productResult = await db.query(
+            'products',
+            columns: ['stock'],
+            where: 'id = ?',
+            whereArgs: [item.productId],
+            limit: 1,
+          );
+
+          if (productResult.isNotEmpty) {
+            final currentStock = productResult.first['stock'] as int;
+            final newStock = currentStock - item.returnQuantity;
+
+            await hybridSyncManager.updateRecord(
+              'products',
+              {'stock': newStock, 'updated_at': now},
+              where: 'id = ?',
+              whereArgs: [item.productId],
+              syncImmediately: true,
+            );
+          }
+        }
+      }
 
       return await getPurchaseReturnById(purchaseReturn.id);
     } catch (e) {
@@ -258,29 +322,63 @@ class PurchaseReturnLocalDataSourceImpl
   @override
   Future<void> deletePurchaseReturn(String id) async {
     try {
-      final db = await databaseHelper.database;
-
       // Get return data for stock adjustment
       final purchaseReturn = await getPurchaseReturnById(id);
 
-      await db.transaction((txn) async {
-        // 1. Reverse stock if status was COMPLETED
-        if (purchaseReturn.status == 'COMPLETED') {
-          for (var item in purchaseReturn.items) {
-            await _updateProductStock(txn, item.productId, item.returnQuantity);
+      final db = await databaseHelper.database;
+
+      // 1. Reverse stock if status was COMPLETED menggunakan HybridSyncManager
+      if (purchaseReturn.status == 'COMPLETED') {
+        final now = DateTime.now().toIso8601String();
+        for (var item in purchaseReturn.items) {
+          // Get current stock
+          final productResult = await db.query(
+            'products',
+            columns: ['stock'],
+            where: 'id = ?',
+            whereArgs: [item.productId],
+            limit: 1,
+          );
+
+          if (productResult.isNotEmpty) {
+            final currentStock = productResult.first['stock'] as int;
+            final newStock = currentStock + item.returnQuantity;
+
+            // Update via HybridSyncManager untuk auto-sync
+            await hybridSyncManager.updateRecord(
+              'products',
+              {'stock': newStock, 'updated_at': now},
+              where: 'id = ?',
+              whereArgs: [item.productId],
+              syncImmediately: true,
+            );
           }
         }
+      }
 
-        // 2. Delete items
-        await txn.delete(
+      // 2. Delete items menggunakan HybridSyncManager untuk auto-sync
+      final items = await db.query(
+        'purchase_return_items',
+        where: 'return_id = ?',
+        whereArgs: [id],
+      );
+
+      for (var item in items) {
+        await hybridSyncManager.deleteRecord(
           'purchase_return_items',
-          where: 'return_id = ?',
-          whereArgs: [id],
+          where: 'id = ?',
+          whereArgs: [item['id']],
+          syncImmediately: true,
         );
+      }
 
-        // 3. Delete header
-        await txn.delete('purchase_returns', where: 'id = ?', whereArgs: [id]);
-      });
+      // 3. Delete header menggunakan HybridSyncManager untuk auto-sync
+      await hybridSyncManager.deleteRecord(
+        'purchase_returns',
+        where: 'id = ?',
+        whereArgs: [id],
+        syncImmediately: true,
+      );
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to delete purchase return: $e',
@@ -340,28 +438,6 @@ class PurchaseReturnLocalDataSourceImpl
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to get purchase return items: $e',
-      );
-    }
-  }
-
-  Future<void> _updateProductStock(
-    Transaction txn,
-    String productId,
-    int quantityChange,
-  ) async {
-    try {
-      await txn.rawUpdate(
-        '''
-        UPDATE products 
-        SET stock = stock + ?,
-            updated_at = ?
-        WHERE id = ?
-      ''',
-        [quantityChange, DateTime.now().toIso8601String(), productId],
-      );
-    } catch (e) {
-      throw app_exceptions.DatabaseException(
-        message: 'Failed to update product stock: $e',
       );
     }
   }

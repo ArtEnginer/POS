@@ -93,3 +93,14 @@ class ParseException implements Exception {
   @override
   String toString() => 'ParseException: $message';
 }
+
+class OfflineOperationException implements Exception {
+  final String message;
+  final String feature;
+
+  OfflineOperationException({required this.message, required this.feature});
+
+  @override
+  String toString() =>
+      'OfflineOperationException: $message (Feature: $feature)';
+}

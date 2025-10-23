@@ -7,7 +7,7 @@ class AppConstants {
   // Database
   static const String localDatabaseName = 'pos_local.db';
   static const int localDatabaseVersion =
-      8; // Updated untuk cashier_name field di transactions table
+      10; // Updated untuk fix purchases.updated_at column
   static const String hiveBoxName = 'pos_cache';
 
   // Sync Settings

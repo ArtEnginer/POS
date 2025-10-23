@@ -15,6 +15,7 @@ import '../../../supplier/presentation/bloc/supplier_bloc.dart';
 import '../../../supplier/presentation/pages/supplier_list_page.dart';
 import '../../../customer/presentation/bloc/customer_bloc.dart';
 import '../../../customer/presentation/pages/customer_list_page.dart';
+import 'mysql_settings_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -328,6 +329,20 @@ class SettingsPage extends StatelessWidget {
             title: 'Informasi Toko',
             subtitle: 'Nama, alamat, dan kontak toko',
             onTap: () {},
+          ),
+          // MySQL Settings - BARU!
+          _SettingsTile(
+            icon: Icons.cloud_sync,
+            title: 'MySQL Server',
+            subtitle: 'Konfigurasi sinkronisasi dengan MySQL',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MySQLSettingsPage(),
+                ),
+              );
+            },
           ),
           _SettingsTile(
             icon: Icons.sync,

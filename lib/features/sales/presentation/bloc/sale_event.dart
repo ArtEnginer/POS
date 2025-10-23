@@ -79,3 +79,70 @@ class LoadDailySummary extends SaleEvent {
   @override
   List<Object> get props => [date];
 }
+
+// Pending Sale Events
+class SavePendingSale extends SaleEvent {
+  final String pendingNumber;
+  final String? customerId;
+  final String? customerName;
+  final String savedBy;
+  final String? notes;
+  final List<dynamic> items;
+  final double subtotal;
+  final double tax;
+  final double discount;
+  final double total;
+
+  const SavePendingSale({
+    required this.pendingNumber,
+    this.customerId,
+    this.customerName,
+    required this.savedBy,
+    this.notes,
+    required this.items,
+    required this.subtotal,
+    required this.tax,
+    required this.discount,
+    required this.total,
+  });
+
+  @override
+  List<Object?> get props => [
+    pendingNumber,
+    customerId,
+    customerName,
+    savedBy,
+    notes,
+    items,
+    subtotal,
+    tax,
+    discount,
+    total,
+  ];
+}
+
+class LoadPendingSales extends SaleEvent {
+  const LoadPendingSales();
+}
+
+class LoadPendingSaleById extends SaleEvent {
+  final String id;
+
+  const LoadPendingSaleById(this.id);
+
+  @override
+  List<Object> get props => [id];
+}
+
+class DeletePendingSale extends SaleEvent {
+  final String id;
+
+  const DeletePendingSale(this.id);
+
+  @override
+  List<Object> get props => [id];
+}
+
+class GeneratePendingNumber extends SaleEvent {
+  const GeneratePendingNumber();
+}

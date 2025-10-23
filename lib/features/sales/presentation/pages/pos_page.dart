@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/print_settings.dart';
+import '../../../../core/widgets/connection_status_indicator.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
+import '../../../../injection_container.dart' as di;
 import '../../../product/domain/entities/product.dart';
 import '../../../product/presentation/bloc/product_bloc.dart';
 import '../../../product/presentation/bloc/product_event.dart';
@@ -14,6 +17,7 @@ import '../../../customer/presentation/bloc/customer_bloc.dart';
 import '../../../customer/presentation/bloc/customer_event.dart';
 import '../../../customer/presentation/bloc/customer_state.dart';
 import '../../domain/entities/sale.dart';
+import '../../domain/entities/pending_sale.dart';
 import '../bloc/sale_bloc.dart';
 import '../bloc/sale_event.dart' as sale_event;
 import '../bloc/sale_state.dart';
@@ -40,11 +44,18 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
   double _globalTaxPercentage = 0;
   double _globalDiscountAmount = 0;
   String _saleNumber = '';
+  String? _pendingCustomerId; // Store customer ID to auto-select after creation
+  bool _isLoadingPending =
+      false; // Flag to indicate loading pending transaction
+
+  // Hybrid Sync Manager untuk monitoring status koneksi
+  late final HybridSyncManager _hybridSyncManager;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _hybridSyncManager = di.sl<HybridSyncManager>();
     _loadInitialData();
   }
 
@@ -104,10 +115,30 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
           ],
         ),
         actions: [
+          // Status Koneksi Online/Offline
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+            child: StreamConnectionStatusIndicator(
+              syncManager: _hybridSyncManager,
+              showLabel: true,
+              iconSize: 20,
+              fontSize: 11,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             onPressed: _openPrinterSettings,
             tooltip: 'Pengaturan Printer',
+          ),
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            onPressed: _showLoadPendingDialog,
+            tooltip: 'Buka Transaksi Pending',
+          ),
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _cartItems.isEmpty ? null : _savePendingTransaction,
+            tooltip: 'Simpan sebagai Pending',
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -146,6 +177,26 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
                 }
 
                 _resetTransaction();
+              } else if (state is PendingSaleOperationSuccess) {
+                // Check if we're in the process of loading a pending transaction
+                if (_isLoadingPending) {
+                  // This is delete after load, ignore it
+                  _isLoadingPending = false;
+                } else {
+                  // This is normal pending operation (save or explicit delete)
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.message),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  // Only reset if it's from save pending operation
+                  if (state.message.contains('disimpan')) {
+                    _resetTransaction();
+                  }
+                }
+              } else if (state is PendingSaleLoaded) {
+                _loadPendingTransactionToCart(state.pendingSale);
               } else if (state is SaleError) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -168,7 +219,25 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
           BlocListener<CustomerBloc, CustomerState>(
             listener: (context, state) {
               if (state is CustomerLoaded) {
-                setState(() => _allCustomers = state.customers);
+                setState(() {
+                  // Remove duplicates by creating a map with id as key
+                  final uniqueCustomersMap = <String, Customer>{};
+                  for (final customer in state.customers) {
+                    uniqueCustomersMap[customer.id] = customer;
+                  }
+                  _allCustomers = uniqueCustomersMap.values.toList();
+
+                  // Auto-select pending customer if exists
+                  if (_pendingCustomerId != null) {
+                    _selectedCustomer = uniqueCustomersMap[_pendingCustomerId];
+                    _pendingCustomerId = null; // Clear after use
+                  }
+                  // Otherwise, update selected customer to use the instance from the loaded list
+                  else if (_selectedCustomer != null) {
+                    _selectedCustomer =
+                        uniqueCustomersMap[_selectedCustomer!.id];
+                  }
+                });
               } else if (state is CustomerOperationSuccess) {
                 context.read<CustomerBloc>().add(LoadAllCustomers());
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -332,32 +401,6 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
               ),
             ],
           ),
-          child: Column(
-            children: [
-              _buildSummaryRow('Subtotal', currencyFormat.format(_subtotal)),
-              if (_itemDiscountTotal > 0) ...[
-                const SizedBox(height: 8),
-                _buildSummaryRow(
-                  'Diskon Item',
-                  '- ${currencyFormat.format(_itemDiscountTotal)}',
-                  color: Colors.red,
-                ),
-              ],
-              if (_itemTaxTotal > 0) ...[
-                const SizedBox(height: 8),
-                _buildSummaryRow(
-                  'Pajak Item',
-                  currencyFormat.format(_itemTaxTotal),
-                ),
-              ],
-              const Divider(height: 24),
-              _buildSummaryRow(
-                'TOTAL',
-                currencyFormat.format(_total),
-                isTotal: true,
-              ),
-            ],
-          ),
         ),
       ],
     );
@@ -370,238 +413,378 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
       decimalDigits: 0,
     );
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: DataTable(
-            headingRowColor: MaterialStateProperty.all(
-              AppColors.primary.withOpacity(0.1),
+    return Container(
+      color: Colors.grey[50],
+      child: Column(
+        children: [
+          // Header Table
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              border: Border(
+                bottom: BorderSide(color: Colors.grey[300]!, width: 1),
+              ),
             ),
-            headingRowHeight: 40,
-            dataRowMinHeight: 50,
-            dataRowMaxHeight: 80,
-            columnSpacing: 8,
-            horizontalMargin: 8,
-            border: TableBorder.all(
-              color: Colors.grey[300]!,
-              width: 1,
-              borderRadius: BorderRadius.circular(4),
+            child: Row(
+              children: [
+                // No
+                Container(
+                  width: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'No',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                // Produk
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Produk',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                // Harga
+                Container(
+                  width: 100,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Harga',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                // Qty
+                Container(
+                  width: 120,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Qty',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                // Diskon
+                Container(
+                  width: 80,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Diskon %',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                // Pajak
+                Container(
+                  width: 80,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Pajak %',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                // Subtotal
+                Container(
+                  width: 120,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Subtotal',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                // Aksi
+                Container(
+                  width: 60,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Aksi',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
             ),
-            columns: const [
-              DataColumn(
-                label: Text(
-                  'No',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Produk',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Harga',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Qty',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Diskon (%)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Pajak (%)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              DataColumn(
-                label: Text(
-                  'Subtotal',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                numeric: true,
-              ),
-              DataColumn(
-                label: Text(
-                  'Aksi',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-            rows: List.generate(_cartItems.length, (index) {
-              final item = _cartItems[index];
-              return DataRow(
-                cells: [
-                  // No
-                  DataCell(
-                    Text(
-                      '${index + 1}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+
+          // List Items
+          Expanded(
+            child: ListView.builder(
+              itemCount: _cartItems.length,
+              itemBuilder: (context, index) {
+                final item = _cartItems[index];
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey[200]!, width: 1),
                     ),
                   ),
-                  // Product Name
-                  DataCell(
-                    SizedBox(
-                      width: 200,
-                      child: Text(
-                        item.productName,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      // No
+                      Container(
+                        width: 60,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 16,
+                        ),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  // Price
-                  DataCell(
-                    Text(
-                      currencyFormat.format(item.price),
-                      style: TextStyle(color: Colors.grey[700]),
-                    ),
-                  ),
-                  // Quantity with controls
-                  DataCell(
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!),
-                        borderRadius: BorderRadius.circular(4),
+
+                      // Produk Name
+                      Expanded(
+                        flex: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            item.productName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          InkWell(
-                            onTap: () => _decreaseQuantity(index),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(Icons.remove, size: 14),
+
+                      // Harga
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: Text(
+                          currencyFormat.format(item.price),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+
+                      // Quantity
+                      Container(
+                        width: 120,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton(
+                                onPressed: () => _decreaseQuantity(index),
+                                icon: const Icon(Icons.remove, size: 16),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Text(
+                                  item.quantity.toString(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _increaseQuantity(index),
+                                icon: const Icon(Icons.add, size: 16),
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Diskon
+                      Container(
+                        width: 80,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: '0',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(color: Colors.grey[400]!),
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              item.quantity.toString(),
-                              style: const TextStyle(
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12),
+                          onChanged: (value) {
+                            setState(() {
+                              item.discountPercentage =
+                                  double.tryParse(value) ?? 0;
+                            });
+                          },
+                        ),
+                      ),
+
+                      // Pajak
+                      Container(
+                        width: 80,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: '0',
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(color: Colors.grey[400]!),
+                            ),
+                          ),
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12),
+                          onChanged: (value) {
+                            setState(() {
+                              item.taxPercentage = double.tryParse(value) ?? 0;
+                            });
+                          },
+                        ),
+                      ),
+
+                      // Subtotal
+                      Container(
+                        width: 120,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              currencyFormat.format(
+                                item.subtotalWithTaxDiscount,
+                              ),
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
+                                color: AppColors.primary,
                               ),
                             ),
-                          ),
-                          InkWell(
-                            onTap: () => _increaseQuantity(index),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6),
-                              child: Icon(Icons.add, size: 14),
-                            ),
-                          ),
-                        ],
+                            if (item.discountAmount > 0 || item.taxAmount > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  '${item.discountAmount > 0 ? '-${currencyFormat.format(item.discountAmount)}' : ''}${item.taxAmount > 0 ? ' +${currencyFormat.format(item.taxAmount)}' : ''}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                  // Discount
-                  DataCell(
-                    SizedBox(
-                      width: 60,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: '0',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 6,
+
+                      // Aksi
+                      Container(
+                        width: 60,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 16,
+                        ),
+                        child: IconButton(
+                          onPressed: () => _removeFromCart(index),
+                          icon: Icon(
+                            Icons.delete_outline,
+                            color: Colors.red[400],
+                            size: 20,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          style: IconButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
-                        onChanged: (value) {
-                          setState(() {
-                            item.discountPercentage =
-                                double.tryParse(value) ?? 0;
-                          });
-                        },
                       ),
-                    ),
+                    ],
                   ),
-                  // Tax
-                  DataCell(
-                    SizedBox(
-                      width: 60,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: '0',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 6,
-                          ),
-                        ),
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
-                        onChanged: (value) {
-                          setState(() {
-                            item.taxPercentage = double.tryParse(value) ?? 0;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
-                  // Subtotal
-                  DataCell(
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          currencyFormat.format(item.subtotalWithTaxDiscount),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        if (item.discountAmount > 0 || item.taxAmount > 0)
-                          Text(
-                            '${item.discountAmount > 0 ? '-${currencyFormat.format(item.discountAmount)}' : ''} ${item.taxAmount > 0 ? '+${currencyFormat.format(item.taxAmount)}' : ''}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  // Actions
-                  DataCell(
-                    IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: Colors.red,
-                        size: 20,
-                      ),
-                      onPressed: () => _removeFromCart(index),
-                      tooltip: 'Hapus',
-                    ),
-                  ),
-                ],
-              );
-            }),
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -662,8 +845,8 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
                       elevation: 1,
                       child: Column(
                         children: [
-                          DropdownButtonFormField<Customer?>(
-                            value: _selectedCustomer,
+                          DropdownButtonFormField<String?>(
+                            value: _selectedCustomer?.id,
                             decoration: InputDecoration(
                               prefixIcon: const Icon(Icons.person_outline),
                               border: OutlineInputBorder(
@@ -675,19 +858,26 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
                               ),
                             ),
                             items: [
-                              const DropdownMenuItem<Customer?>(
+                              const DropdownMenuItem<String?>(
                                 value: null,
                                 child: Text('-- Pelanggan Umum --'),
                               ),
                               ..._allCustomers.map(
-                                (customer) => DropdownMenuItem<Customer?>(
-                                  value: customer,
+                                (customer) => DropdownMenuItem<String?>(
+                                  value: customer.id,
                                   child: Text(customer.name),
                                 ),
                               ),
                             ],
                             onChanged: (value) {
-                              setState(() => _selectedCustomer = value);
+                              setState(() {
+                                _selectedCustomer =
+                                    value == null
+                                        ? null
+                                        : _allCustomers.firstWhere(
+                                          (c) => c.id == value,
+                                        );
+                              });
                             },
                           ),
                           Padding(
@@ -1272,12 +1462,8 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
                         );
                         Navigator.of(dialogContext).pop();
 
-                        // Set as selected customer after creation
-                        Future.delayed(const Duration(milliseconds: 500), () {
-                          setState(() {
-                            _selectedCustomer = customer;
-                          });
-                        });
+                        // Store the customer ID to auto-select after reload
+                        _pendingCustomerId = customer.id;
                       },
                       icon: const Icon(Icons.save),
                       label: const Text('Simpan'),
@@ -1367,6 +1553,402 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
     );
 
     context.read<SaleBloc>().add(sale_event.CreateSale(sale));
+  }
+
+  // Pending Transaction Methods
+  void _savePendingTransaction() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final notesController = TextEditingController();
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.save, color: Colors.orange),
+              SizedBox(width: 12),
+              Text('Simpan sebagai Pending'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Transaksi akan disimpan dan bisa dilanjutkan nanti.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: notesController,
+                decoration: InputDecoration(
+                  labelText: 'Catatan (Opsional)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _savePending(notesController.text.trim());
+              },
+              icon: const Icon(Icons.save, color: Colors.white),
+              label: const Text(
+                'Simpan',
+                style: TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _savePending(String notes) {
+    final items =
+        _cartItems
+            .map(
+              (item) => {
+                'id': const Uuid().v4(),
+                'productId': item.productId,
+                'productName': item.productName,
+                'quantity': item.quantity,
+                'price': item.price,
+                'discount': item.discountAmount,
+                'subtotal': item.subtotalWithTaxDiscount,
+              },
+            )
+            .toList();
+
+    // Generate pending number
+    context.read<SaleBloc>().add(const sale_event.GeneratePendingNumber());
+
+    // Listen for the generated number
+    final subscription = context.read<SaleBloc>().stream.listen((state) {
+      if (state is PendingNumberGenerated) {
+        context.read<SaleBloc>().add(
+          sale_event.SavePendingSale(
+            pendingNumber: state.number,
+            customerId: _selectedCustomer?.id,
+            customerName: _selectedCustomer?.name,
+            savedBy: 'CASHIER001',
+            notes: notes.isEmpty ? null : notes,
+            items: items,
+            subtotal: _subtotal,
+            tax: _itemTaxTotal + _globalTax,
+            discount: _itemDiscountTotal + _globalDiscountAmount,
+            total: _total,
+          ),
+        );
+      }
+    });
+
+    // Cancel subscription after a short delay
+    Future.delayed(const Duration(seconds: 2), () {
+      subscription.cancel();
+    });
+  }
+
+  void _showLoadPendingDialog() {
+    final saleBloc = context.read<SaleBloc>();
+    saleBloc.add(const sale_event.LoadPendingSales());
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return BlocBuilder<SaleBloc, SaleState>(
+          bloc: saleBloc,
+          builder: (context, state) {
+            if (state is SaleLoading) {
+              return const AlertDialog(
+                content: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (state is PendingSalesLoaded) {
+              final pendingSales = state.pendingSales;
+
+              if (pendingSales.isEmpty) {
+                return AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: const Row(
+                    children: [
+                      Icon(Icons.info_outline),
+                      SizedBox(width: 12),
+                      Text('Tidak ada transaksi pending'),
+                    ],
+                  ),
+                  content: const Text(
+                    'Belum ada transaksi yang disimpan sebagai pending.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                );
+              }
+
+              return Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Container(
+                  width: 600,
+                  height: 600,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.folder_open, size: 28),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Transaksi Pending',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: pendingSales.length,
+                          itemBuilder: (context, index) {
+                            final pending = pendingSales[index];
+                            final currencyFormat = NumberFormat.currency(
+                              locale: 'id_ID',
+                              symbol: 'Rp ',
+                              decimalDigits: 0,
+                            );
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(16),
+                                title: Text(
+                                  pending.pendingNumber,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    if (pending.customerName != null)
+                                      Text(
+                                        'Pelanggan: ${pending.customerName}',
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    Text(
+                                      '${pending.items.length} item - ${currencyFormat.format(pending.total)}',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    Text(
+                                      DateFormat(
+                                        'dd MMM yyyy HH:mm',
+                                      ).format(pending.savedAt),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    if (pending.notes != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Catatan: ${pending.notes}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.folder_open,
+                                        color: Colors.blue,
+                                      ),
+                                      onPressed: () {
+                                        Navigator.of(dialogContext).pop();
+                                        saleBloc.add(
+                                          sale_event.LoadPendingSaleById(
+                                            pending.id,
+                                          ),
+                                        );
+                                      },
+                                      tooltip: 'Buka',
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () {
+                                        _confirmDeletePending(
+                                          dialogContext,
+                                          pending.id,
+                                          pending.pendingNumber,
+                                        );
+                                      },
+                                      tooltip: 'Hapus',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return AlertDialog(
+              content: const Text('Terjadi kesalahan'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _confirmDeletePending(
+    BuildContext dialogContext,
+    String pendingId,
+    String pendingNumber,
+  ) {
+    final saleBloc = context.read<SaleBloc>();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext confirmContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red),
+              SizedBox(width: 12),
+              Text('Konfirmasi Hapus'),
+            ],
+          ),
+          content: Text(
+            'Apakah Anda yakin ingin menghapus transaksi pending\n$pendingNumber?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(confirmContext).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(confirmContext).pop();
+                Navigator.of(dialogContext).pop();
+                saleBloc.add(sale_event.DeletePendingSale(pendingId));
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _loadPendingTransactionToCart(PendingSale pendingSale) {
+    // Set flag to prevent reset when delete succeeds
+    _isLoadingPending = true;
+
+    setState(() {
+      // Clear current cart
+      _cartItems.clear();
+
+      // Load items from pending
+      for (var item in pendingSale.items) {
+        _cartItems.add(
+          _CartItem(
+            productId: item.productId,
+            productName: item.productName,
+            price: item.price,
+            quantity: item.quantity,
+            maxStock: 9999, // We'll update this when checking stock
+          ),
+        );
+      }
+
+      // Load customer
+      if (pendingSale.customerId != null) {
+        _selectedCustomer = _allCustomers.firstWhere(
+          (c) => c.id == pendingSale.customerId,
+          orElse:
+              () => Customer(
+                id: pendingSale.customerId!,
+                name: pendingSale.customerName ?? 'Pelanggan',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ),
+        );
+      }
+
+      // Load notes
+      if (pendingSale.notes != null) {
+        _notesController.text = pendingSale.notes!;
+      }
+    });
+
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Transaksi ${pendingSale.pendingNumber} dimuat'),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // Delete the pending transaction after loading
+    context.read<SaleBloc>().add(sale_event.DeletePendingSale(pendingSale.id));
   }
 
   @override

@@ -1,15 +1,25 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
+import '../../../../core/sync/sync_manager.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../domain/entities/sale.dart';
+import '../../domain/entities/pending_sale.dart';
 import '../../domain/repositories/sale_repository.dart';
 import '../datasources/sale_local_data_source.dart';
 import '../models/sale_model.dart';
+import '../models/pending_sale_model.dart';
 
 class SaleRepositoryImpl implements SaleRepository {
   final SaleLocalDataSource localDataSource;
+  final SyncManager syncManager;
+  final HybridSyncManager hybridSyncManager;
 
-  SaleRepositoryImpl({required this.localDataSource});
+  SaleRepositoryImpl({
+    required this.localDataSource,
+    required this.syncManager,
+    required this.hybridSyncManager,
+  });
 
   @override
   Future<Either<Failure, List<Sale>>> getAllSales() async {
@@ -62,9 +72,22 @@ class SaleRepositoryImpl implements SaleRepository {
     try {
       final saleModel = SaleModel.fromEntity(sale);
       final createdSale = await localDataSource.createSale(saleModel);
+
+      // Add to sync queue for automatic sync
+      await syncManager.addToSyncQueue(
+        tableName: 'transactions',
+        recordId: sale.id,
+        operation: 'INSERT',
+        data: saleModel.toJson(),
+      );
+
       return Right(createdSale);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
     } on CacheException catch (e) {
       return Left(CacheFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
     }
   }
 
@@ -73,9 +96,22 @@ class SaleRepositoryImpl implements SaleRepository {
     try {
       final saleModel = SaleModel.fromEntity(sale);
       final updatedSale = await localDataSource.updateSale(saleModel);
+
+      // Add to sync queue for automatic sync
+      await syncManager.addToSyncQueue(
+        tableName: 'transactions',
+        recordId: sale.id,
+        operation: 'UPDATE',
+        data: saleModel.toJson(),
+      );
+
       return Right(updatedSale);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
     } on CacheException catch (e) {
       return Left(CacheFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
     }
   }
 
@@ -83,9 +119,22 @@ class SaleRepositoryImpl implements SaleRepository {
   Future<Either<Failure, void>> deleteSale(String id) async {
     try {
       await localDataSource.deleteSale(id);
+
+      // Add to sync queue for automatic sync
+      await syncManager.addToSyncQueue(
+        tableName: 'transactions',
+        recordId: id,
+        operation: 'DELETE',
+        data: {'id': id},
+      );
+
       return const Right(null);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
     } on CacheException catch (e) {
       return Left(CacheFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
     }
   }
 
@@ -106,6 +155,70 @@ class SaleRepositoryImpl implements SaleRepository {
     try {
       final summary = await localDataSource.getDailySummary(date);
       return Right(summary);
+    } on CacheException catch (e) {
+      return Left(CacheFailure(message: e.message));
+    }
+  }
+
+  // Pending Sale Methods Implementation
+  @override
+  Future<Either<Failure, PendingSale>> savePendingSale(
+    PendingSale pendingSale,
+  ) async {
+    try {
+      final pendingSaleModel = PendingSaleModel.fromEntity(pendingSale);
+      final savedPendingSale = await localDataSource.savePendingSale(
+        pendingSaleModel,
+      );
+      return Right(savedPendingSale);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
+    } on CacheException catch (e) {
+      return Left(CacheFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<PendingSale>>> getPendingSales() async {
+    try {
+      final pendingSales = await localDataSource.getPendingSales();
+      return Right(pendingSales);
+    } on CacheException catch (e) {
+      return Left(CacheFailure(message: e.message));
+    }
+  }
+
+  @override
+  Future<Either<Failure, PendingSale>> getPendingSaleById(String id) async {
+    try {
+      final pendingSale = await localDataSource.getPendingSaleById(id);
+      return Right(pendingSale);
+    } on CacheException catch (e) {
+      return Left(CacheFailure(message: e.message));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deletePendingSale(String id) async {
+    try {
+      await localDataSource.deletePendingSale(id);
+      return const Right(null);
+    } on DatabaseException catch (e) {
+      return Left(DatabaseFailure(message: e.message));
+    } on CacheException catch (e) {
+      return Left(CacheFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, String>> generatePendingNumber() async {
+    try {
+      final number = await localDataSource.generatePendingNumber();
+      return Right(number);
     } on CacheException catch (e) {
       return Left(CacheFailure(message: e.message));
     }

@@ -1,5 +1,5 @@
-import 'package:sqflite/sqflite.dart';
 import '../../../../core/database/database_helper.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/product_model.dart';
 
@@ -19,8 +19,12 @@ abstract class ProductLocalDataSource {
 
 class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   final DatabaseHelper databaseHelper;
+  final HybridSyncManager hybridSyncManager;
 
-  ProductLocalDataSourceImpl({required this.databaseHelper});
+  ProductLocalDataSourceImpl({
+    required this.databaseHelper,
+    required this.hybridSyncManager,
+  });
 
   @override
   Future<List<ProductModel>> getAllProducts() async {
@@ -156,11 +160,11 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> insertProduct(ProductModel product) async {
     try {
-      final db = await databaseHelper.database;
-      await db.insert(
+      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
+      await hybridSyncManager.insertRecord(
         'products',
         product.toJson(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
     } catch (e) {
       throw app_exceptions.DatabaseException(
@@ -172,12 +176,13 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> updateProduct(ProductModel product) async {
     try {
-      final db = await databaseHelper.database;
-      final result = await db.update(
+      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
+      final result = await hybridSyncManager.updateRecord(
         'products',
         product.toJson(),
         where: 'id = ?',
         whereArgs: [product.id],
+        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
 
       if (result == 0) {
@@ -193,14 +198,15 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> deleteProduct(String id) async {
     try {
-      final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
-      final result = await db.update(
+      // ✅ AUTO SYNC: Soft delete ke local DAN sync ke server jika online
+      final result = await hybridSyncManager.updateRecord(
         'products',
-        {'deleted_at': now, 'updated_at': now, 'sync_status': 'PENDING'},
+        {'deleted_at': now, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
+        syncImmediately: true,
       );
 
       if (result == 0) {
@@ -219,15 +225,29 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
       final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
-      final result = await db.rawUpdate(
-        '''
-        UPDATE products 
-        SET stock = stock + ?, 
-            updated_at = ?,
-            sync_status = 'PENDING'
-        WHERE id = ?
-      ''',
-        [quantity, now, id],
+      // Get current stock first
+      final current = await db.query(
+        'products',
+        columns: ['stock'],
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+
+      if (current.isEmpty) {
+        throw app_exceptions.DatabaseException(message: 'Product not found');
+      }
+
+      final currentStock = current.first['stock'] as int;
+      final newStock = currentStock + quantity;
+
+      // ✅ AUTO SYNC: Update stock ke local DAN sync ke server jika online
+      final result = await hybridSyncManager.updateRecord(
+        'products',
+        {'stock': newStock, 'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [id],
+        syncImmediately: true,
       );
 
       if (result == 0) {

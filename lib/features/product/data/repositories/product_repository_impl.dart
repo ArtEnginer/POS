@@ -2,6 +2,8 @@ import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
 import '../../../../core/sync/sync_manager.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
+import '../../../../core/utils/online_only_guard.dart';
 import '../../domain/entities/product.dart';
 import '../../domain/repositories/product_repository.dart';
 import '../datasources/product_local_data_source.dart';
@@ -10,10 +12,12 @@ import '../models/product_model.dart';
 class ProductRepositoryImpl implements ProductRepository {
   final ProductLocalDataSource localDataSource;
   final SyncManager syncManager;
+  final HybridSyncManager hybridSyncManager;
 
   ProductRepositoryImpl({
     required this.localDataSource,
     required this.syncManager,
+    required this.hybridSyncManager,
   });
 
   @override
@@ -93,6 +97,10 @@ class ProductRepositoryImpl implements ProductRepository {
   @override
   Future<Either<Failure, Product>> createProduct(Product product) async {
     try {
+      // ✅ ONLINE-ONLY: Fitur manajemen produk harus online
+      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
+      await guard.requireOnline('Manajemen Produk');
+
       final productModel = ProductModel.fromEntity(product);
       await localDataSource.insertProduct(productModel);
 
@@ -105,6 +113,8 @@ class ProductRepositoryImpl implements ProductRepository {
       );
 
       return Right(productModel);
+    } on OfflineOperationException catch (e) {
+      return Left(NetworkFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.message));
     } catch (e) {
@@ -115,6 +125,10 @@ class ProductRepositoryImpl implements ProductRepository {
   @override
   Future<Either<Failure, Product>> updateProduct(Product product) async {
     try {
+      // ✅ ONLINE-ONLY: Fitur manajemen produk harus online
+      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
+      await guard.requireOnline('Manajemen Produk');
+
       final productModel = ProductModel.fromEntity(product);
       await localDataSource.updateProduct(productModel);
 
@@ -127,6 +141,8 @@ class ProductRepositoryImpl implements ProductRepository {
       );
 
       return Right(productModel);
+    } on OfflineOperationException catch (e) {
+      return Left(NetworkFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.message));
     } catch (e) {
@@ -137,6 +153,10 @@ class ProductRepositoryImpl implements ProductRepository {
   @override
   Future<Either<Failure, void>> deleteProduct(String id) async {
     try {
+      // ✅ ONLINE-ONLY: Fitur manajemen produk harus online
+      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
+      await guard.requireOnline('Manajemen Produk');
+
       await localDataSource.deleteProduct(id);
 
       // Add to sync queue
@@ -148,6 +168,8 @@ class ProductRepositoryImpl implements ProductRepository {
       );
 
       return const Right(null);
+    } on OfflineOperationException catch (e) {
+      return Left(NetworkFailure(message: e.message));
     } on DatabaseException catch (e) {
       return Left(DatabaseFailure(message: e.message));
     } catch (e) {

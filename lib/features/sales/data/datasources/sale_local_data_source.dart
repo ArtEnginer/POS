@@ -1,8 +1,10 @@
 import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/error/exceptions.dart';
+import '../../../../core/database/hybrid_sync_manager.dart';
+import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/sale_model.dart';
+import '../models/pending_sale_model.dart';
 
 abstract class SaleLocalDataSource {
   Future<List<SaleModel>> getAllSales();
@@ -17,12 +19,23 @@ abstract class SaleLocalDataSource {
   Future<void> deleteSale(String id);
   Future<String> generateSaleNumber();
   Future<Map<String, dynamic>> getDailySummary(DateTime date);
+
+  // Pending transaction methods
+  Future<PendingSaleModel> savePendingSale(PendingSaleModel pendingSale);
+  Future<List<PendingSaleModel>> getPendingSales();
+  Future<PendingSaleModel> getPendingSaleById(String id);
+  Future<void> deletePendingSale(String id);
+  Future<String> generatePendingNumber();
 }
 
 class SaleLocalDataSourceImpl implements SaleLocalDataSource {
   final DatabaseHelper databaseHelper;
+  final HybridSyncManager hybridSyncManager;
 
-  SaleLocalDataSourceImpl({required this.databaseHelper});
+  SaleLocalDataSourceImpl({
+    required this.databaseHelper,
+    required this.hybridSyncManager,
+  });
 
   @override
   Future<List<SaleModel>> getAllSales() async {
@@ -43,7 +56,7 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
 
       return sales;
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
@@ -58,7 +71,9 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
       );
 
       if (result.isEmpty) {
-        throw CacheException(message: 'Transaksi tidak ditemukan');
+        throw app_exceptions.CacheException(
+          message: 'Transaksi tidak ditemukan',
+        );
       }
 
       final items = await _getSaleItems(db, id);
@@ -67,7 +82,7 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
         'items': items.map((item) => item.toJson()).toList(),
       });
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
@@ -101,7 +116,7 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
 
       return sales;
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
@@ -132,18 +147,18 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
 
       return sales;
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
   @override
   Future<SaleModel> createSale(SaleModel sale) async {
     try {
-      final db = await databaseHelper.database;
-
-      await db.transaction((txn) async {
-        // Insert sale
-        await txn.insert('transactions', {
+      // ✅ HYBRID MODE: Sales work both online and offline
+      // Insert to local DAN sync ke server jika online
+      await hybridSyncManager.insertRecord(
+        'transactions',
+        {
           'id': sale.id,
           'transaction_number': sale.saleNumber,
           'customer_id': sale.customerId,
@@ -158,14 +173,19 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
           'change_amount': sale.changeAmount,
           'status': sale.status,
           'notes': sale.notes,
-          'sync_status': sale.syncStatus,
+          'sync_status': 'PENDING',
           'transaction_date': sale.saleDate.toIso8601String(),
           'created_at': sale.createdAt.toIso8601String(),
           'updated_at': sale.updatedAt.toIso8601String(),
-        });
+        },
+        syncImmediately: true, // Langsung sync ke server jika tersedia
+      );
 
-        // Insert sale items and update stock
+      // Insert sale items and update stock
+      final db = await databaseHelper.database;
+      await db.transaction((txn) async {
         for (var item in sale.items) {
+          // Insert transaction items
           await txn.insert('transaction_items', {
             'id': item.id,
             'transaction_id': sale.id,
@@ -175,30 +195,29 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
             'price': item.price,
             'discount': item.discount,
             'subtotal': item.subtotal,
-            'sync_status': item.syncStatus,
+            'sync_status': 'PENDING',
             'created_at': item.createdAt.toIso8601String(),
           });
 
-          // Update product stock
+          // Update product stock (reduce stock)
           await txn.rawUpdate(
-            'UPDATE products SET stock = stock - ? WHERE id = ?',
-            [item.quantity, item.productId],
+            'UPDATE products SET stock = stock - ?, sync_status = ? WHERE id = ?',
+            [item.quantity, 'PENDING', item.productId],
           );
         }
       });
 
       return await getSaleById(sale.id);
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.DatabaseException(message: e.toString());
     }
   }
 
   @override
   Future<SaleModel> updateSale(SaleModel sale) async {
     try {
-      final db = await databaseHelper.database;
-
-      await db.update(
+      // ✅ HYBRID MODE: Update local DAN sync ke server jika online
+      await hybridSyncManager.updateRecord(
         'transactions',
         {
           'customer_id': sale.customerId,
@@ -211,15 +230,17 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
           'change_amount': sale.changeAmount,
           'status': sale.status,
           'notes': sale.notes,
+          'sync_status': 'PENDING',
           'updated_at': DateTime.now().toIso8601String(),
         },
         where: 'id = ?',
         whereArgs: [sale.id],
+        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
 
       return await getSaleById(sale.id);
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.DatabaseException(message: e.toString());
     }
   }
 
@@ -235,8 +256,8 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
         // Restore product stock
         for (var item in items) {
           await txn.rawUpdate(
-            'UPDATE products SET stock = stock + ? WHERE id = ?',
-            [item.quantity, item.productId],
+            'UPDATE products SET stock = stock + ?, sync_status = ? WHERE id = ?',
+            [item.quantity, 'PENDING', item.productId],
           );
         }
 
@@ -246,12 +267,17 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
           where: 'transaction_id = ?',
           whereArgs: [id],
         );
-
-        // Delete sale
-        await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
       });
+
+      // ✅ HYBRID MODE: Delete dari local DAN sync ke server jika online
+      await hybridSyncManager.deleteRecord(
+        'transactions',
+        where: 'id = ?',
+        whereArgs: [id],
+        syncImmediately: true, // Langsung sync ke server jika tersedia
+      );
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.DatabaseException(message: e.toString());
     }
   }
 
@@ -284,7 +310,7 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
 
       return '$prefix-$newSequence';
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
@@ -313,7 +339,7 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
 
       return result.first;
     } catch (e) {
-      throw CacheException(message: e.toString());
+      throw app_exceptions.CacheException(message: e.toString());
     }
   }
 
@@ -328,5 +354,183 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
     );
 
     return result.map((item) => SaleItemModel.fromJson(item)).toList();
+  }
+
+  // Pending Sale Methods Implementation
+  @override
+  Future<PendingSaleModel> savePendingSale(PendingSaleModel pendingSale) async {
+    try {
+      final db = await databaseHelper.database;
+
+      await db.transaction((txn) async {
+        // Insert pending transaction
+        await txn.insert('pending_transactions', {
+          'id': pendingSale.id,
+          'pending_number': pendingSale.pendingNumber,
+          'customer_id': pendingSale.customerId,
+          'customer_name': pendingSale.customerName,
+          'saved_at': pendingSale.savedAt.toIso8601String(),
+          'saved_by': pendingSale.savedBy,
+          'notes': pendingSale.notes,
+          'subtotal': pendingSale.subtotal,
+          'tax': pendingSale.tax,
+          'discount': pendingSale.discount,
+          'total': pendingSale.total,
+        });
+
+        // Insert pending transaction items
+        for (var item in pendingSale.items) {
+          await txn.insert('pending_transaction_items', {
+            'id': item.id,
+            'pending_id': pendingSale.id,
+            'product_id': item.productId,
+            'product_name': item.productName,
+            'quantity': item.quantity,
+            'price': item.price,
+            'discount': item.discount,
+            'subtotal': item.subtotal,
+            'created_at': item.createdAt.toIso8601String(),
+          });
+        }
+      });
+
+      return await getPendingSaleById(pendingSale.id);
+    } catch (e) {
+      throw app_exceptions.DatabaseException(message: e.toString());
+    }
+  }
+
+  @override
+  Future<List<PendingSaleModel>> getPendingSales() async {
+    try {
+      final db = await databaseHelper.database;
+      final result = await db.query(
+        'pending_transactions',
+        orderBy: 'saved_at DESC',
+      );
+
+      final pendingSales = <PendingSaleModel>[];
+      for (var pendingData in result) {
+        final items = await _getPendingSaleItems(
+          db,
+          pendingData['id'] as String,
+        );
+        pendingSales.add(
+          PendingSaleModel.fromJson({
+            ...pendingData,
+            'items': items.map((item) => item.toJson()).toList(),
+          }),
+        );
+      }
+
+      return pendingSales;
+    } catch (e) {
+      throw app_exceptions.CacheException(message: e.toString());
+    }
+  }
+
+  @override
+  Future<PendingSaleModel> getPendingSaleById(String id) async {
+    try {
+      final db = await databaseHelper.database;
+      final result = await db.query(
+        'pending_transactions',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      if (result.isEmpty) {
+        throw app_exceptions.CacheException(
+          message: 'Pending transaksi tidak ditemukan',
+        );
+      }
+
+      final items = await _getPendingSaleItems(db, id);
+      return PendingSaleModel.fromJson({
+        ...result.first,
+        'items': items.map((item) => item.toJson()).toList(),
+      });
+    } catch (e) {
+      throw app_exceptions.CacheException(message: e.toString());
+    }
+  }
+
+  @override
+  Future<void> deletePendingSale(String id) async {
+    try {
+      final db = await databaseHelper.database;
+
+      await db.transaction((txn) async {
+        // Delete pending sale items
+        await txn.delete(
+          'pending_transaction_items',
+          where: 'pending_id = ?',
+          whereArgs: [id],
+        );
+
+        // Delete pending sale
+        await txn.delete(
+          'pending_transactions',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      });
+    } catch (e) {
+      throw app_exceptions.DatabaseException(message: e.toString());
+    }
+  }
+
+  @override
+  Future<String> generatePendingNumber() async {
+    try {
+      final db = await databaseHelper.database;
+      final now = DateTime.now();
+      final dateFormat = DateFormat('yyyyMMdd').format(now);
+      final prefix = 'PEND-$dateFormat';
+
+      final result = await db.rawQuery(
+        '''
+        SELECT pending_number 
+        FROM pending_transactions 
+        WHERE pending_number LIKE ?
+        ORDER BY pending_number DESC 
+        LIMIT 1
+        ''',
+        ['$prefix%'],
+      );
+
+      if (result.isEmpty) {
+        return '$prefix-0001';
+      }
+
+      final lastNumber = result.first['pending_number'] as String;
+      final lastSequence = int.parse(lastNumber.split('-').last);
+      final newSequence = (lastSequence + 1).toString().padLeft(4, '0');
+
+      return '$prefix-$newSequence';
+    } catch (e) {
+      throw app_exceptions.CacheException(message: e.toString());
+    }
+  }
+
+  Future<List<SaleItemModel>> _getPendingSaleItems(
+    DatabaseExecutor db,
+    String pendingId,
+  ) async {
+    final result = await db.query(
+      'pending_transaction_items',
+      where: 'pending_id = ?',
+      whereArgs: [pendingId],
+    );
+
+    return result
+        .map(
+          (item) => SaleItemModel.fromJson({
+            ...item,
+            'sale_id': item['pending_id'],
+            'transaction_id': item['pending_id'],
+          }),
+        )
+        .toList();
   }
 }

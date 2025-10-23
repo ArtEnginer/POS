@@ -1,9 +1,14 @@
 import 'package:get_it/get_it.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:logger/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Core
 import 'core/database/database_helper.dart';
+import 'core/database/mysql_connector.dart';
+import 'core/database/mysql_config_manager.dart';
+import 'core/database/hybrid_sync_manager.dart';
+import 'core/database/sync_status_migration.dart';
 import 'core/network/api_client.dart';
 import 'core/network/network_info.dart';
 import 'core/sync/sync_manager.dart';
@@ -94,12 +99,19 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<ProductRepository>(
-    () => ProductRepositoryImpl(localDataSource: sl(), syncManager: sl()),
+    () => ProductRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<ProductLocalDataSource>(
-    () => ProductLocalDataSourceImpl(databaseHelper: sl()),
+    () => ProductLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Features - Purchase ==========
@@ -132,12 +144,19 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<PurchaseRepository>(
-    () => PurchaseRepositoryImpl(localDataSource: sl()),
+    () => PurchaseRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<PurchaseLocalDataSource>(
-    () => PurchaseLocalDataSourceImpl(databaseHelper: sl()),
+    () => PurchaseLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Features - Supplier ==========
@@ -160,12 +179,19 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<SupplierRepository>(
-    () => SupplierRepositoryImpl(localDataSource: sl()),
+    () => SupplierRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<SupplierLocalDataSource>(
-    () => SupplierLocalDataSourceImpl(databaseHelper: sl()),
+    () => SupplierLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Features - Receiving ==========
@@ -196,12 +222,19 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<ReceivingRepository>(
-    () => ReceivingRepositoryImpl(localDataSource: sl()),
+    () => ReceivingRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<ReceivingLocalDataSource>(
-    () => ReceivingLocalDataSourceImpl(databaseHelper: sl()),
+    () => ReceivingLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Features - Purchase Return ==========
@@ -232,12 +265,19 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<PurchaseReturnRepository>(
-    () => PurchaseReturnRepositoryImpl(localDataSource: sl()),
+    () => PurchaseReturnRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<PurchaseReturnLocalDataSource>(
-    () => PurchaseReturnLocalDataSourceImpl(databaseHelper: sl()),
+    () => PurchaseReturnLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Features - Sales ==========
@@ -254,6 +294,11 @@ Future<void> init() async {
       deleteSale: sl(),
       generateSaleNumber: sl(),
       getDailySummary: sl(),
+      savePendingSale: sl(),
+      getPendingSales: sl(),
+      getPendingSaleById: sl(),
+      deletePendingSale: sl(),
+      generatePendingNumber: sl(),
     ),
   );
 
@@ -267,15 +312,25 @@ Future<void> init() async {
   sl.registerLazySingleton(() => sale_usecases.DeleteSale(sl()));
   sl.registerLazySingleton(() => sale_usecases.GenerateSaleNumber(sl()));
   sl.registerLazySingleton(() => sale_usecases.GetDailySummary(sl()));
+  sl.registerLazySingleton(() => sale_usecases.SavePendingSale(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GetPendingSales(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GetPendingSaleById(sl()));
+  sl.registerLazySingleton(() => sale_usecases.DeletePendingSale(sl()));
+  sl.registerLazySingleton(() => sale_usecases.GeneratePendingNumber(sl()));
 
   // Repository
   sl.registerLazySingleton<SaleRepository>(
-    () => SaleRepositoryImpl(localDataSource: sl()),
+    () => SaleRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<SaleLocalDataSource>(
-    () => SaleLocalDataSourceImpl(databaseHelper: sl()),
+    () =>
+        SaleLocalDataSourceImpl(databaseHelper: sl(), hybridSyncManager: sl()),
   );
 
   // ========== Features - Customer ==========
@@ -304,17 +359,48 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<CustomerRepository>(
-    () => CustomerRepositoryImpl(localDataSource: sl()),
+    () => CustomerRepositoryImpl(
+      localDataSource: sl(),
+      syncManager: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<CustomerLocalDataSource>(
-    () => CustomerLocalDataSourceImpl(databaseHelper: sl()),
+    () => CustomerLocalDataSourceImpl(
+      databaseHelper: sl(),
+      hybridSyncManager: sl(),
+    ),
   );
 
   // ========== Core ==========
 
-  // Sync Manager
+  // Database
+  sl.registerLazySingleton(() => DatabaseHelper.instance);
+
+  // Database Migration
+  sl.registerLazySingleton(
+    () => SyncStatusMigration(databaseHelper: sl(), logger: sl()),
+  );
+
+  // MySQL Connector & Hybrid Sync Manager
+  sl.registerLazySingleton(() => MySQLConnector(logger: sl()));
+
+  sl.registerLazySingleton(
+    () => HybridSyncManager(
+      databaseHelper: sl(),
+      mysqlConnector: sl(),
+      networkInfo: sl(),
+      logger: sl(),
+    ),
+  );
+
+  // MySQL Config Manager
+  final prefs = await SharedPreferences.getInstance();
+  sl.registerLazySingleton(() => MySQLConfigManager(prefs));
+
+  // Sync Manager (Legacy - kept for compatibility)
   sl.registerLazySingleton(
     () => SyncManager(
       apiClient: sl(),
@@ -327,9 +413,6 @@ Future<void> init() async {
   // Network
   sl.registerLazySingleton(() => ApiClient());
   sl.registerLazySingleton<NetworkInfo>(() => NetworkInfoImpl(sl()));
-
-  // Database
-  sl.registerLazySingleton(() => DatabaseHelper.instance);
 
   // External
   sl.registerLazySingleton(() => Connectivity());
