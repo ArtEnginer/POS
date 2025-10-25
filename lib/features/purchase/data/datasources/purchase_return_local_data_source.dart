@@ -1,6 +1,5 @@
 import 'package:intl/intl.dart';
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/purchase_return_model.dart';
 
@@ -24,12 +23,8 @@ abstract class PurchaseReturnLocalDataSource {
 class PurchaseReturnLocalDataSourceImpl
     implements PurchaseReturnLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  PurchaseReturnLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  PurchaseReturnLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<PurchaseReturnModel>> getAllPurchaseReturns() async {
@@ -156,20 +151,22 @@ class PurchaseReturnLocalDataSourceImpl
   ) async {
     try {
       // ✅ AUTO SYNC: Insert purchase return header ke local DAN sync ke server
-      await hybridSyncManager.insertRecord(
-        'purchase_returns',
-        purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.insertRecord(
+      //   'purchase_returns',
+      //   purchaseReturn.toJsonForDb(),
+      //   syncImmediately: true,
+      // );
 
       // ✅ AUTO SYNC: Insert purchase return items ke local DAN sync ke server
       for (var item in purchaseReturn.items) {
         final itemModel = PurchaseReturnItemModel.fromEntity(item);
-        await hybridSyncManager.insertRecord(
-          'purchase_return_items',
-          itemModel.toJson(),
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.insertRecord(
+        //   'purchase_return_items',
+        //   itemModel.toJson(),
+        //   syncImmediately: true,
+        // );
       }
 
       final db = await databaseHelper.database;
@@ -191,14 +188,14 @@ class PurchaseReturnLocalDataSourceImpl
             final currentStock = productResult.first['stock'] as int;
             final newStock = currentStock - item.returnQuantity;
 
-            // Update via HybridSyncManager untuk auto-sync
-            await hybridSyncManager.updateRecord(
-              'products',
-              {'stock': newStock, 'updated_at': now},
-              where: 'id = ?',
-              whereArgs: [item.productId],
-              syncImmediately: true,
-            );
+            // TODO: Replace with direct database operations
+            // await hybridSyncManager.updateRecord(
+            //   'products',
+            //   {'stock': newStock, 'updated_at': now},
+            //   where: 'id = ?',
+            //   whereArgs: [item.productId],
+            //   syncImmediately: true,
+            // );
           }
         }
       }
@@ -220,13 +217,14 @@ class PurchaseReturnLocalDataSourceImpl
       final oldReturn = await getPurchaseReturnById(purchaseReturn.id);
 
       // ✅ AUTO SYNC: Update purchase return header ke local DAN sync ke server
-      await hybridSyncManager.updateRecord(
-        'purchase_returns',
-        purchaseReturn.toJsonForDb(), // ✅ Use toJsonForDb to exclude items
-        where: 'id = ?',
-        whereArgs: [purchaseReturn.id],
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.updateRecord(
+      //   'purchase_returns',
+      //   purchaseReturn.toJsonForDb(),
+      //   where: 'id = ?',
+      //   whereArgs: [purchaseReturn.id],
+      //   syncImmediately: true,
+      // );
 
       final db = await databaseHelper.database;
 
@@ -238,22 +236,24 @@ class PurchaseReturnLocalDataSourceImpl
       );
 
       for (var oldItem in oldItems) {
-        await hybridSyncManager.deleteRecord(
-          'purchase_return_items',
-          where: 'id = ?',
-          whereArgs: [oldItem['id']],
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.deleteRecord(
+        //   'purchase_return_items',
+        //   where: 'id = ?',
+        //   whereArgs: [oldItem['id']],
+        //   syncImmediately: true,
+        // );
       }
 
       // ✅ AUTO SYNC: Insert new items ke local DAN sync ke server
       for (var item in purchaseReturn.items) {
         final itemModel = PurchaseReturnItemModel.fromEntity(item);
-        await hybridSyncManager.insertRecord(
-          'purchase_return_items',
-          itemModel.toJson(),
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.insertRecord(
+        //   'purchase_return_items',
+        //   itemModel.toJson(),
+        //   syncImmediately: true,
+        // );
       }
 
       // 4. Adjust stock if needed menggunakan HybridSyncManager
@@ -274,13 +274,14 @@ class PurchaseReturnLocalDataSourceImpl
             final currentStock = productResult.first['stock'] as int;
             final newStock = currentStock + item.returnQuantity;
 
-            await hybridSyncManager.updateRecord(
-              'products',
-              {'stock': newStock, 'updated_at': now},
-              where: 'id = ?',
-              whereArgs: [item.productId],
-              syncImmediately: true,
-            );
+            // TODO: Replace with direct database operations
+            // await hybridSyncManager.updateRecord(
+            //   'products',
+            //   {'stock': newStock, 'updated_at': now},
+            //   where: 'id = ?',
+            //   whereArgs: [item.productId],
+            //   syncImmediately: true,
+            // );
           }
         }
       }
@@ -300,13 +301,14 @@ class PurchaseReturnLocalDataSourceImpl
             final currentStock = productResult.first['stock'] as int;
             final newStock = currentStock - item.returnQuantity;
 
-            await hybridSyncManager.updateRecord(
-              'products',
-              {'stock': newStock, 'updated_at': now},
-              where: 'id = ?',
-              whereArgs: [item.productId],
-              syncImmediately: true,
-            );
+            // TODO: Replace with direct database operations
+            // await hybridSyncManager.updateRecord(
+            //   'products',
+            //   {'stock': newStock, 'updated_at': now},
+            //   where: 'id = ?',
+            //   whereArgs: [item.productId],
+            //   syncImmediately: true,
+            // );
           }
         }
       }
@@ -344,14 +346,14 @@ class PurchaseReturnLocalDataSourceImpl
             final currentStock = productResult.first['stock'] as int;
             final newStock = currentStock + item.returnQuantity;
 
-            // Update via HybridSyncManager untuk auto-sync
-            await hybridSyncManager.updateRecord(
-              'products',
-              {'stock': newStock, 'updated_at': now},
-              where: 'id = ?',
-              whereArgs: [item.productId],
-              syncImmediately: true,
-            );
+            // TODO: Replace with direct database operations
+            // await hybridSyncManager.updateRecord(
+            //   'products',
+            //   {'stock': newStock, 'updated_at': now},
+            //   where: 'id = ?',
+            //   whereArgs: [item.productId],
+            //   syncImmediately: true,
+            // );
           }
         }
       }
@@ -364,21 +366,23 @@ class PurchaseReturnLocalDataSourceImpl
       );
 
       for (var item in items) {
-        await hybridSyncManager.deleteRecord(
-          'purchase_return_items',
-          where: 'id = ?',
-          whereArgs: [item['id']],
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.deleteRecord(
+        //   'purchase_return_items',
+        //   where: 'id = ?',
+        //   whereArgs: [item['id']],
+        //   syncImmediately: true,
+        // );
       }
 
       // 3. Delete header menggunakan HybridSyncManager untuk auto-sync
-      await hybridSyncManager.deleteRecord(
-        'purchase_returns',
-        where: 'id = ?',
-        whereArgs: [id],
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.deleteRecord(
+      //   'purchase_returns',
+      //   where: 'id = ?',
+      //   whereArgs: [id],
+      //   syncImmediately: true,
+      // );
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to delete purchase return: $e',

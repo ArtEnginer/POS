@@ -1,5 +1,4 @@
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/product_model.dart';
 
@@ -19,12 +18,8 @@ abstract class ProductLocalDataSource {
 
 class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  ProductLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  ProductLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<ProductModel>> getAllProducts() async {
@@ -160,12 +155,9 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> insertProduct(ProductModel product) async {
     try {
-      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
-      await hybridSyncManager.insertRecord(
-        'products',
-        product.toJson(),
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
+      // Backend V2: Direct database insert, API handles real-time sync via Socket.IO
+      final db = await databaseHelper.database;
+      await db.insert('products', product.toJson());
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to insert product: $e',
@@ -176,13 +168,13 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> updateProduct(ProductModel product) async {
     try {
-      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
-      final result = await hybridSyncManager.updateRecord(
+      // Backend V2: Direct database update, API handles real-time sync via Socket.IO
+      final db = await databaseHelper.database;
+      final result = await db.update(
         'products',
         product.toJson(),
         where: 'id = ?',
         whereArgs: [product.id],
-        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
 
       if (result == 0) {
@@ -198,15 +190,15 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
   @override
   Future<void> deleteProduct(String id) async {
     try {
+      // Backend V2: Direct database soft delete, API handles real-time sync via Socket.IO
+      final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
-      // ✅ AUTO SYNC: Soft delete ke local DAN sync ke server jika online
-      final result = await hybridSyncManager.updateRecord(
+      final result = await db.update(
         'products',
         {'deleted_at': now, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
-        syncImmediately: true,
       );
 
       if (result == 0) {
@@ -241,13 +233,12 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
       final currentStock = current.first['stock'] as int;
       final newStock = currentStock + quantity;
 
-      // ✅ AUTO SYNC: Update stock ke local DAN sync ke server jika online
-      final result = await hybridSyncManager.updateRecord(
+      // Backend V2: Direct database update, API handles real-time sync via Socket.IO
+      final result = await db.update(
         'products',
         {'stock': newStock, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
-        syncImmediately: true,
       );
 
       if (result == 0) {

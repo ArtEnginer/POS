@@ -1,9 +1,6 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/sync/sync_manager.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
-import '../../../../core/utils/online_only_guard.dart';
 import '../../domain/entities/receiving.dart';
 import '../../domain/repositories/receiving_repository.dart';
 import '../datasources/receiving_local_data_source.dart';
@@ -11,14 +8,8 @@ import '../models/receiving_model.dart';
 
 class ReceivingRepositoryImpl implements ReceivingRepository {
   final ReceivingLocalDataSource localDataSource;
-  final SyncManager syncManager;
-  final HybridSyncManager hybridSyncManager;
 
-  ReceivingRepositoryImpl({
-    required this.localDataSource,
-    required this.syncManager,
-    required this.hybridSyncManager,
-  });
+  ReceivingRepositoryImpl({required this.localDataSource});
 
   @override
   Future<Either<Failure, List<Receiving>>> getAllReceivings() async {
@@ -82,19 +73,14 @@ class ReceivingRepositoryImpl implements ReceivingRepository {
   ) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen receiving harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Receiving');
+      // Guard removed
+      // Guard removed
 
       final receivingModel = ReceivingModel.fromEntity(receiving);
       final created = await localDataSource.createReceiving(receivingModel);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'receivings',
-        recordId: receiving.id,
-        operation: 'INSERT',
-        data: receivingModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(created);
     } on OfflineOperationException catch (e) {
@@ -112,19 +98,14 @@ class ReceivingRepositoryImpl implements ReceivingRepository {
   ) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen receiving harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Receiving');
+      // Guard removed
+      // Guard removed
 
       final receivingModel = ReceivingModel.fromEntity(receiving);
       final updated = await localDataSource.updateReceiving(receivingModel);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'receivings',
-        recordId: receiving.id,
-        operation: 'UPDATE',
-        data: receivingModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(updated);
     } on OfflineOperationException catch (e) {
@@ -140,18 +121,13 @@ class ReceivingRepositoryImpl implements ReceivingRepository {
   Future<Either<Failure, void>> deleteReceiving(String id) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen receiving harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Receiving');
+      // Guard removed
+      // Guard removed
 
       await localDataSource.deleteReceiving(id);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'receivings',
-        recordId: id,
-        operation: 'DELETE',
-        data: {'id': id},
-      );
+      // Temporarily disabled
 
       return const Right(null);
     } on OfflineOperationException catch (e) {

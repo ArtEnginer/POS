@@ -1,35 +1,80 @@
 import 'package:dio/dio.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
-import '../constants/app_constants.dart';
+import '../constants/api_constants.dart';
+import '../auth/auth_service.dart';
 import '../error/exceptions.dart';
 
 class ApiClient {
   late final Dio _dio;
-  String? _authToken;
+  final AuthService _authService;
+  bool _isRefreshing = false;
+  List<RequestOptions> _pendingRequests = [];
 
-  ApiClient() {
+  ApiClient(this._authService) {
     _dio = Dio(
       BaseOptions(
-        baseUrl: AppConstants.baseUrl,
-        connectTimeout: AppConstants.apiTimeout,
-        receiveTimeout: AppConstants.apiTimeout,
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: ApiConstants.connectTimeout,
+        receiveTimeout: ApiConstants.receiveTimeout,
+        sendTimeout: ApiConstants.sendTimeout,
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          'Content-Type': ApiConstants.contentTypeJson,
+          'Accept': ApiConstants.contentTypeJson,
         },
       ),
     );
 
-    // Add interceptors
+    // Add JWT interceptor
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (_authToken != null) {
-            options.headers['Authorization'] = 'Bearer $_authToken';
+        onRequest: (options, handler) async {
+          // Attach access token to every request
+          final token = await _authService.getAccessToken();
+          if (token != null) {
+            options.headers['Authorization'] =
+                '${ApiConstants.bearerPrefix} $token';
           }
           return handler.next(options);
         },
-        onError: (error, handler) {
+        onError: (error, handler) async {
+          // Handle 401 Unauthorized - Token expired
+          if (error.response?.statusCode == 401 && !_isRefreshing) {
+            _isRefreshing = true;
+
+            try {
+              // Try to refresh token
+              await _authService.refreshAccessToken();
+
+              // Retry the original request with new token
+              final options = error.requestOptions;
+              final token = await _authService.getAccessToken();
+              options.headers['Authorization'] =
+                  '${ApiConstants.bearerPrefix} $token';
+
+              final response = await _dio.fetch(options);
+              _isRefreshing = false;
+
+              // Retry all pending requests
+              _retryPendingRequests();
+
+              return handler.resolve(response);
+            } catch (e) {
+              _isRefreshing = false;
+              _pendingRequests.clear();
+
+              // Refresh failed, logout user
+              await _authService.logout();
+
+              return handler.reject(error);
+            }
+          }
+
+          // If token is being refreshed, queue this request
+          if (_isRefreshing && error.response?.statusCode == 401) {
+            _pendingRequests.add(error.requestOptions);
+            return handler.reject(error);
+          }
+
           _handleError(error);
           return handler.next(error);
         },
@@ -49,12 +94,20 @@ class ApiClient {
     );
   }
 
-  void setAuthToken(String token) {
-    _authToken = token;
-  }
+  // Retry all pending requests after token refresh
+  Future<void> _retryPendingRequests() async {
+    final requests = List<RequestOptions>.from(_pendingRequests);
+    _pendingRequests.clear();
 
-  void clearAuthToken() {
-    _authToken = null;
+    final token = await _authService.getAccessToken();
+    for (final options in requests) {
+      options.headers['Authorization'] = '${ApiConstants.bearerPrefix} $token';
+      try {
+        await _dio.fetch(options);
+      } catch (e) {
+        // Ignore errors for now
+      }
+    }
   }
 
   Future<Response> get(

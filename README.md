@@ -1,24 +1,48 @@
-# SuperPOS - Point of Sale System
+# 🏪 SuperPOS - Enterprise Point of Sale System
 
-Sistem Point of Sale (POS) berbasis Flutter dengan Clean Architecture, database lokal & remote, dan sistem sinkronisasi otomatis untuk skala Supermarket.
+Modern POS system built with **Flutter 3.29** & **Clean Architecture**, powered by **Node.js + PostgreSQL + Redis + Socket.IO** backend for real-time sync and scalability.
 
-## 🎯 Fitur Utama
+## 🚀 Tech Stack
 
-### ✅ Sudah Tersedia
-- ✨ **Clean Architecture** - Pemisahan layer Domain, Data, dan Presentation
-- 🗄️ **Database Lokal (SQLite)** - Penyimpanan data offline untuk performa cepat
-- ☁️ **Database Remote** - Integrasi dengan backend server
-- 🔄 **Sistem Sinkronisasi** - Sync otomatis antara lokal dan remote
-- 📱 **Responsive Design** - Support mobile dan tablet
-- 🎨 **Modern UI/UX** - Material Design 3 dengan tema profesional
+### **Backend V2** (Production-Ready)
+- **PostgreSQL 16** - Primary database (ACID compliant, scalable)
+- **Redis 7** - Caching layer & real-time sync queue
+- **Node.js 20 + Express 4** - RESTful API server
+- **Socket.IO 4** - Real-time bidirectional communication
+- **PM2** - Process manager for production deployment
+- **JWT** - Secure authentication (15min access, 7day refresh)
 
-### 🚧 Dalam Pengembangan
-- 🛒 **Kasir/POS** - Interface kasir dengan barcode scanner
-- 📦 **Manajemen Produk** - CRUD produk dengan kategori
-- 📝 **Transaksi** - Riwayat dan detail transaksi
-- 📊 **Laporan & Analitik** - Dashboard penjualan dan inventory
-- 👥 **Manajemen Customer** - Data pelanggan dan loyalty points
-- 💰 **Multi Payment Method** - Cash, Card, QRIS, E-Wallet
+### **Frontend** (Flutter)
+- **Flutter 3.29.1 / Dart 3.7.0** - Cross-platform framework
+- **BLoC Pattern** - State management
+- **Clean Architecture** - Domain/Data/Presentation separation
+- **SQLite** - Local cache for offline-first experience
+- **Dio** - HTTP client with interceptors
+- **Socket.IO Client** - Real-time updates
+- **GetIt** - Dependency injection
+
+## ✨ Features
+
+### ✅ **Fully Implemented**
+- 🔐 **Authentication** - JWT-based secure login with token refresh
+- 📦 **Product Management** - Full CRUD with categories, stock tracking
+- 👥 **Customer Management** - Customer profiles with transaction history
+- 🏢 **Supplier Management** - Supplier data with purchase tracking
+- 🛒 **POS/Sales** - Fast checkout with cart, discounts, payment methods
+- 📥 **Purchase & Receiving** - Purchase orders with receiving workflow
+- � **Purchase Returns** - Return defective/incorrect items
+- 🌐 **Multi-Branch Support** - Tenant isolation for multiple locations
+- 🔄 **Real-time Sync** - Socket.IO broadcasts all entity changes
+- 📴 **Offline Mode** - Works without internet, syncs when available
+- 🎨 **Modern UI/UX** - Material Design 3 with professional theme
+
+### 🎯 **Architecture Highlights**
+- ✨ **Clean Architecture** - Testable, maintainable, scalable
+- �️ **Offline-First** - SQLite cache, Backend as source of truth
+- � **Auto-Sync** - Socket.IO real-time updates across all clients
+- 🏢 **Multi-Tenant** - Branch-level data isolation
+- � **Secure** - JWT auth, role-based access control
+- � **RESTful API** - Standard HTTP endpoints for all operations
 - 🖨️ **Print Receipt** - Cetak struk belanja
 - 📈 **Stock Management** - Tracking stok dan notifikasi low stock
 

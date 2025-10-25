@@ -1,5 +1,4 @@
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/receiving_model.dart';
 
@@ -16,12 +15,8 @@ abstract class ReceivingLocalDataSource {
 
 class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  ReceivingLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  ReceivingLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<ReceivingModel>> getAllReceivings() async {
@@ -141,11 +136,12 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
   Future<ReceivingModel> createReceiving(ReceivingModel receiving) async {
     try {
       // ✅ AUTO SYNC: Insert receiving header ke local DAN sync ke server
-      await hybridSyncManager.insertRecord(
-        'receivings',
-        receiving.toJson(),
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.insertRecord(
+      //   'receivings',
+      //   receiving.toJson(),
+      //   syncImmediately: true,
+      // );
 
       print(
         'DEBUG: Inserting receiving items, count: ${receiving.items.length}',
@@ -158,11 +154,12 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           'DEBUG: Inserting item: ${item.productName}, receiving_id: ${itemJson['receiving_id']}',
         );
 
-        await hybridSyncManager.insertRecord(
-          'receiving_items',
-          itemJson,
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.insertRecord(
+        //   'receiving_items',
+        //   itemJson,
+        //   syncImmediately: true,
+        // );
       }
 
       print('DEBUG: All items inserted successfully');
@@ -186,24 +183,26 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           final newStock = currentStock + item.receivedQuantity;
 
           // Update via HybridSyncManager untuk auto-sync
-          await hybridSyncManager.updateRecord(
-            'products',
-            {'stock': newStock, 'updated_at': now},
-            where: 'id = ?',
-            whereArgs: [item.productId],
-            syncImmediately: true,
-          );
+          // TODO: Replace with direct database operations
+          // await hybridSyncManager.updateRecord(
+          //   'products',
+          //   {'stock': newStock, 'updated_at': now},
+          //   where: 'id = ?',
+          //   whereArgs: [item.productId],
+          //   syncImmediately: true,
+          // );
         }
       }
 
       // 4. Update purchase status to RECEIVED menggunakan HybridSyncManager untuk auto-sync
-      await hybridSyncManager.updateRecord(
-        'purchases',
-        {'status': 'RECEIVED', 'updated_at': DateTime.now().toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [receiving.purchaseId],
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.updateRecord(
+      //   'purchases',
+      //   {'status': 'RECEIVED', 'updated_at': DateTime.now().toIso8601String()},
+      //   where: 'id = ?',
+      //   whereArgs: [receiving.purchaseId],
+      //   syncImmediately: true,
+      // );
 
       return await getReceivingById(receiving.id);
     } catch (e) {
@@ -220,13 +219,14 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
       final oldReceiving = await getReceivingById(receiving.id);
 
       // ✅ AUTO SYNC: Update receiving header ke local DAN sync ke server
-      await hybridSyncManager.updateRecord(
-        'receivings',
-        receiving.toJson(),
-        where: 'id = ?',
-        whereArgs: [receiving.id],
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.updateRecord(
+      //   'receivings',
+      //   receiving.toJson(),
+      //   where: 'id = ?',
+      //   whereArgs: [receiving.id],
+      //   syncImmediately: true,
+      // );
 
       final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
@@ -239,21 +239,23 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
       );
 
       for (var oldItem in oldItems) {
-        await hybridSyncManager.deleteRecord(
-          'receiving_items',
-          where: 'id = ?',
-          whereArgs: [oldItem['id']],
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.deleteRecord(
+        //   'receiving_items',
+        //   where: 'id = ?',
+        //   whereArgs: [oldItem['id']],
+        //   syncImmediately: true,
+        // );
       }
 
       // ✅ AUTO SYNC: Insert new items ke local DAN sync ke server
       for (var item in receiving.items) {
-        await hybridSyncManager.insertRecord(
-          'receiving_items',
-          (item as ReceivingItemModel).toJson(),
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.insertRecord(
+        //   'receiving_items',
+        //   (item as ReceivingItemModel).toJson(),
+        //   syncImmediately: true,
+        // );
       }
 
       // 3. Reverse old stock & apply new stock menggunakan HybridSyncManager
@@ -272,14 +274,14 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           final currentStock = productResult.first['stock'] as int;
           final newStock = currentStock - oldItem.receivedQuantity;
 
-          // Update via HybridSyncManager
-          await hybridSyncManager.updateRecord(
-            'products',
-            {'stock': newStock, 'updated_at': now},
-            where: 'id = ?',
-            whereArgs: [oldItem.productId],
-            syncImmediately: true,
-          );
+          // TODO: Replace with direct database operations
+          // await hybridSyncManager.updateRecord(
+          //   'products',
+          //   {'stock': newStock, 'updated_at': now},
+          //   where: 'id = ?',
+          //   whereArgs: [oldItem.productId],
+          //   syncImmediately: true,
+          // );
         }
       }
 
@@ -299,14 +301,14 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           final currentStock = productResult.first['stock'] as int;
           final newStock = currentStock + item.receivedQuantity;
 
-          // Update via HybridSyncManager
-          await hybridSyncManager.updateRecord(
-            'products',
-            {'stock': newStock, 'updated_at': now},
-            where: 'id = ?',
-            whereArgs: [item.productId],
-            syncImmediately: true,
-          );
+          // TODO: Replace with direct database operations
+          // await hybridSyncManager.updateRecord(
+          //   'products',
+          //   {'stock': newStock, 'updated_at': now},
+          //   where: 'id = ?',
+          //   whereArgs: [item.productId],
+          //   syncImmediately: true,
+          // );
         }
       }
 
@@ -342,14 +344,14 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
           final currentStock = productResult.first['stock'] as int;
           final newStock = currentStock - item.receivedQuantity;
 
-          // Update via HybridSyncManager
-          await hybridSyncManager.updateRecord(
-            'products',
-            {'stock': newStock, 'updated_at': now},
-            where: 'id = ?',
-            whereArgs: [item.productId],
-            syncImmediately: true,
-          );
+          // TODO: Replace with direct database operations
+          // await hybridSyncManager.updateRecord(
+          //   'products',
+          //   {'stock': newStock, 'updated_at': now},
+          //   where: 'id = ?',
+          //   whereArgs: [item.productId],
+          //   syncImmediately: true,
+          // );
         }
       }
 
@@ -361,21 +363,23 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
       );
 
       for (var item in items) {
-        await hybridSyncManager.deleteRecord(
-          'receiving_items',
-          where: 'id = ?',
-          whereArgs: [item['id']],
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.deleteRecord(
+        //   'receiving_items',
+        //   where: 'id = ?',
+        //   whereArgs: [item['id']],
+        //   syncImmediately: true,
+        // );
       }
 
       // 3. Delete receiving header menggunakan HybridSyncManager untuk auto-sync
-      await hybridSyncManager.deleteRecord(
-        'receivings',
-        where: 'id = ?',
-        whereArgs: [id],
-        syncImmediately: true,
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.deleteRecord(
+      //   'receivings',
+      //   where: 'id = ?',
+      //   whereArgs: [id],
+      //   syncImmediately: true,
+      // );
 
       // 4. Check if there are other receivings for this purchase
       final otherReceivings = await db.query(
@@ -386,16 +390,17 @@ class ReceivingLocalDataSourceImpl implements ReceivingLocalDataSource {
 
       // 5. If no more receivings, revert purchase status to APPROVED menggunakan HybridSyncManager
       if (otherReceivings.isEmpty) {
-        await hybridSyncManager.updateRecord(
-          'purchases',
-          {
-            'status': 'APPROVED',
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          where: 'id = ?',
-          whereArgs: [receiving.purchaseId],
-          syncImmediately: true,
-        );
+        // TODO: Replace with direct database operations
+        // await hybridSyncManager.updateRecord(
+        //   'purchases',
+        //   {
+        //     'status': 'APPROVED',
+        //     'updated_at': DateTime.now().toIso8601String(),
+        //   },
+        //   where: 'id = ?',
+        //   whereArgs: [receiving.purchaseId],
+        //   syncImmediately: true,
+        // );
       }
     } catch (e) {
       throw app_exceptions.DatabaseException(

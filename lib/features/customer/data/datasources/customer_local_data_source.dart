@@ -1,5 +1,4 @@
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart';
 import '../models/customer_model.dart';
 
@@ -15,12 +14,8 @@ abstract class CustomerLocalDataSource {
 
 class CustomerLocalDataSourceImpl implements CustomerLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  CustomerLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  CustomerLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<CustomerModel>> getAllCustomers() async {
@@ -80,12 +75,9 @@ class CustomerLocalDataSourceImpl implements CustomerLocalDataSource {
   @override
   Future<CustomerModel> createCustomer(CustomerModel customer) async {
     try {
-      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
-      await hybridSyncManager.insertRecord(
-        'customers',
-        customer.toJson(),
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
+      // Backend V2: Direct database insert
+      final db = await databaseHelper.database;
+      await db.insert('customers', customer.toJson());
       return customer;
     } catch (e) {
       throw CacheException(message: 'Failed to create customer: $e');
@@ -95,13 +87,13 @@ class CustomerLocalDataSourceImpl implements CustomerLocalDataSource {
   @override
   Future<CustomerModel> updateCustomer(CustomerModel customer) async {
     try {
-      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
-      final result = await hybridSyncManager.updateRecord(
+      // Backend V2: Direct database update
+      final db = await databaseHelper.database;
+      final result = await db.update(
         'customers',
         customer.toJson(),
         where: 'id = ?',
         whereArgs: [customer.id],
-        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
 
       if (result == 0) {
@@ -117,15 +109,15 @@ class CustomerLocalDataSourceImpl implements CustomerLocalDataSource {
   @override
   Future<void> deleteCustomer(String id) async {
     try {
+      // Backend V2: Direct database soft delete
+      final db = await databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
-      // ✅ AUTO SYNC: Soft delete ke local DAN sync ke server jika online
-      final result = await hybridSyncManager.updateRecord(
+      final result = await db.update(
         'customers',
         {'deleted_at': now, 'is_active': 0, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
-        syncImmediately: true,
       );
 
       if (result == 0) {

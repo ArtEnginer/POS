@@ -1,5 +1,4 @@
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../../domain/entities/purchase.dart';
 import '../models/purchase_model.dart';
@@ -16,17 +15,13 @@ abstract class PurchaseLocalDataSource {
   Future<void> updatePurchase(PurchaseModel purchase);
   Future<void> deletePurchase(String id);
   Future<String> generatePurchaseNumber();
-  Future<void> receivePurchase(String id); // New method for receiving
+  Future<void> receivePurchase(String id);
 }
 
 class PurchaseLocalDataSourceImpl implements PurchaseLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  PurchaseLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  PurchaseLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<PurchaseModel>> getAllPurchases() async {
@@ -143,125 +138,26 @@ class PurchaseLocalDataSourceImpl implements PurchaseLocalDataSource {
 
   @override
   Future<void> insertPurchase(PurchaseModel purchase) async {
-    try {
-      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
-      await hybridSyncManager.insertRecord(
-        'purchases',
-        purchase.toJson(),
-        syncImmediately: true,
-      );
-
-      // ✅ AUTO SYNC: Insert purchase items ke local DAN sync ke server
-      for (var item in purchase.items) {
-        await hybridSyncManager.insertRecord(
-          'purchase_items',
-          PurchaseItemModel.fromJson({
-            'id': item.id,
-            'purchase_id': item.purchaseId,
-            'product_id': item.productId,
-            'product_name': item.productName,
-            'quantity': item.quantity,
-            'price': item.price,
-            'subtotal': item.subtotal,
-            'created_at': item.createdAt.toIso8601String(),
-          }).toJson(),
-          syncImmediately: true,
-        );
-      }
-
-      // NOTE: Stock update removed - will be handled by Receiving process
-    } catch (e) {
-      throw app_exceptions.DatabaseException(
-        message: 'Failed to insert purchase: $e',
-      );
-    }
+    // TODO: Implement with Backend V2 - Direct database operations
+    throw UnimplementedError(
+      'Purchase insert temporarily disabled during migration',
+    );
   }
 
   @override
   Future<void> updatePurchase(PurchaseModel purchase) async {
-    try {
-      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
-      await hybridSyncManager.updateRecord(
-        'purchases',
-        purchase.toJson(),
-        where: 'id = ?',
-        whereArgs: [purchase.id],
-        syncImmediately: true,
-      );
-
-      // ✅ AUTO SYNC: Delete old items dari local DAN sync ke server
-      final db = await databaseHelper.database;
-      final oldItems = await db.query(
-        'purchase_items',
-        where: 'purchase_id = ?',
-        whereArgs: [purchase.id],
-      );
-
-      for (var oldItem in oldItems) {
-        await hybridSyncManager.deleteRecord(
-          'purchase_items',
-          where: 'id = ?',
-          whereArgs: [oldItem['id']],
-          syncImmediately: true,
-        );
-      }
-
-      // ✅ AUTO SYNC: Insert new items ke local DAN sync ke server
-      for (var item in purchase.items) {
-        await hybridSyncManager.insertRecord(
-          'purchase_items',
-          PurchaseItemModel.fromJson({
-            'id': item.id,
-            'purchase_id': item.purchaseId,
-            'product_id': item.productId,
-            'product_name': item.productName,
-            'quantity': item.quantity,
-            'price': item.price,
-            'subtotal': item.subtotal,
-            'created_at': item.createdAt.toIso8601String(),
-          }).toJson(),
-          syncImmediately: true,
-        );
-      }
-    } catch (e) {
-      throw app_exceptions.DatabaseException(
-        message: 'Failed to update purchase: $e',
-      );
-    }
+    // TODO: Implement with Backend V2 - Direct database operations
+    throw UnimplementedError(
+      'Purchase update temporarily disabled during migration',
+    );
   }
 
   @override
   Future<void> deletePurchase(String id) async {
-    try {
-      // ✅ AUTO SYNC: Delete purchase items dari local DAN sync ke server
-      final db = await databaseHelper.database;
-      final items = await db.query(
-        'purchase_items',
-        where: 'purchase_id = ?',
-        whereArgs: [id],
-      );
-
-      for (var item in items) {
-        await hybridSyncManager.deleteRecord(
-          'purchase_items',
-          where: 'id = ?',
-          whereArgs: [item['id']],
-          syncImmediately: true,
-        );
-      }
-
-      // ✅ AUTO SYNC: Delete purchase header dari local DAN sync ke server
-      await hybridSyncManager.deleteRecord(
-        'purchases',
-        where: 'id = ?',
-        whereArgs: [id],
-        syncImmediately: true,
-      );
-    } catch (e) {
-      throw app_exceptions.DatabaseException(
-        message: 'Failed to delete purchase: $e',
-      );
-    }
+    // TODO: Implement with Backend V2 - Direct database operations
+    throw UnimplementedError(
+      'Purchase delete temporarily disabled during migration',
+    );
   }
 
   @override
@@ -291,59 +187,10 @@ class PurchaseLocalDataSourceImpl implements PurchaseLocalDataSource {
 
   @override
   Future<void> receivePurchase(String id) async {
-    try {
-      final db = await databaseHelper.database;
-
-      // Get purchase items first
-      final itemResults = await db.query(
-        'purchase_items',
-        where: 'purchase_id = ?',
-        whereArgs: [id],
-      );
-
-      final items =
-          itemResults.map((json) => PurchaseItemModel.fromJson(json)).toList();
-
-      // Update stock for each item using HybridSyncManager
-      final now = DateTime.now().toIso8601String();
-      for (var item in items) {
-        // Get current stock
-        final productResult = await db.query(
-          'products',
-          columns: ['stock'],
-          where: 'id = ?',
-          whereArgs: [item.productId],
-          limit: 1,
-        );
-
-        if (productResult.isNotEmpty) {
-          final currentStock = productResult.first['stock'] as int;
-          final newStock = currentStock + item.quantity;
-
-          // ✅ AUTO SYNC: Update stock menggunakan HybridSyncManager
-          await hybridSyncManager.updateRecord(
-            'products',
-            {'stock': newStock, 'updated_at': now},
-            where: 'id = ?',
-            whereArgs: [item.productId],
-            syncImmediately: true,
-          );
-        }
-      }
-
-      // ✅ AUTO SYNC: Update purchase status ke local DAN sync ke server
-      await hybridSyncManager.updateRecord(
-        'purchases',
-        {'status': 'RECEIVED'},
-        where: 'id = ?',
-        whereArgs: [id],
-        syncImmediately: true,
-      );
-    } catch (e) {
-      throw app_exceptions.DatabaseException(
-        message: 'Failed to receive purchase: $e',
-      );
-    }
+    // TODO: Implement with Backend V2 - Direct database operations
+    throw UnimplementedError(
+      'Purchase receive temporarily disabled during migration',
+    );
   }
 
   Future<List<PurchaseItem>> _getPurchaseItems(String purchaseId) async {

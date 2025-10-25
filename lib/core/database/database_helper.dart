@@ -71,6 +71,7 @@ class DatabaseHelper {
         min_stock INTEGER DEFAULT 0,
         image_url TEXT,
         is_active INTEGER DEFAULT 1,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -87,6 +88,7 @@ class DatabaseHelper {
         parent_id TEXT,
         icon TEXT,
         is_active INTEGER DEFAULT 1,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -109,6 +111,7 @@ class DatabaseHelper {
         tax_number TEXT,
         payment_terms INTEGER DEFAULT 0,
         is_active INTEGER DEFAULT 1,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -129,6 +132,7 @@ class DatabaseHelper {
         postal_code TEXT,
         points INTEGER DEFAULT 0,
         is_active INTEGER DEFAULT 1,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -147,6 +151,7 @@ class DatabaseHelper {
         role TEXT NOT NULL,
         is_active INTEGER DEFAULT 1,
         last_login TEXT,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -172,6 +177,7 @@ class DatabaseHelper {
         paid_amount REAL NOT NULL,
         status TEXT NOT NULL,
         notes TEXT,
+        branch_id INTEGER NOT NULL,
         sync_status TEXT DEFAULT 'PENDING',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -188,6 +194,7 @@ class DatabaseHelper {
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
         subtotal REAL NOT NULL,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -219,6 +226,7 @@ class DatabaseHelper {
         status TEXT NOT NULL DEFAULT 'COMPLETED',
         notes TEXT,
         received_by TEXT,
+        branch_id INTEGER NOT NULL,
         sync_status TEXT DEFAULT 'PENDING',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -245,6 +253,7 @@ class DatabaseHelper {
         subtotal REAL NOT NULL,
         total REAL NOT NULL,
         notes TEXT,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -275,6 +284,7 @@ class DatabaseHelper {
         reason TEXT,
         notes TEXT,
         processed_by TEXT,
+        branch_id INTEGER NOT NULL,
         sync_status TEXT DEFAULT 'PENDING',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -302,6 +312,7 @@ class DatabaseHelper {
         total REAL NOT NULL,
         reason TEXT,
         notes TEXT,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         FOREIGN KEY (return_id) REFERENCES purchase_returns (id),
@@ -330,6 +341,7 @@ class DatabaseHelper {
         change_amount REAL NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
         notes TEXT,
+        branch_id INTEGER NOT NULL,
         sync_status TEXT DEFAULT 'PENDING',
         transaction_date TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -348,6 +360,7 @@ class DatabaseHelper {
         price REAL NOT NULL,
         discount REAL NOT NULL DEFAULT 0,
         subtotal REAL NOT NULL,
+        branch_id INTEGER,
         sync_status TEXT DEFAULT 'PENDING',
         created_at TEXT NOT NULL,
         FOREIGN KEY (transaction_id) REFERENCES transactions (id)
@@ -367,7 +380,8 @@ class DatabaseHelper {
         subtotal REAL NOT NULL,
         tax REAL NOT NULL DEFAULT 0,
         discount REAL NOT NULL DEFAULT 0,
-        total REAL NOT NULL
+        total REAL NOT NULL,
+        branch_id INTEGER
       )
     ''');
 
@@ -382,6 +396,7 @@ class DatabaseHelper {
         price REAL NOT NULL,
         discount REAL NOT NULL DEFAULT 0,
         subtotal REAL NOT NULL,
+        branch_id INTEGER,
         created_at TEXT NOT NULL,
         FOREIGN KEY (pending_id) REFERENCES pending_transactions (id)
       )
@@ -401,6 +416,7 @@ class DatabaseHelper {
         reference_type TEXT,
         notes TEXT,
         user_id TEXT NOT NULL,
+        branch_id INTEGER NOT NULL,
         sync_status TEXT DEFAULT 'PENDING',
         created_at TEXT NOT NULL,
         FOREIGN KEY (product_id) REFERENCES products (id)
@@ -441,11 +457,15 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX idx_products_category ON products(category_id)',
     );
+    await db.execute('CREATE INDEX idx_products_branch ON products(branch_id)');
     await db.execute('CREATE INDEX idx_products_sync ON products(sync_status)');
 
     // Suppliers indexes
     await db.execute('CREATE INDEX idx_suppliers_code ON suppliers(code)');
     await db.execute('CREATE INDEX idx_suppliers_name ON suppliers(name)');
+    await db.execute(
+      'CREATE INDEX idx_suppliers_branch ON suppliers(branch_id)',
+    );
 
     // Purchases indexes
     await db.execute(
@@ -455,6 +475,9 @@ class DatabaseHelper {
       'CREATE INDEX idx_purchases_date ON purchases(purchase_date)',
     );
     await db.execute('CREATE INDEX idx_purchases_status ON purchases(status)');
+    await db.execute(
+      'CREATE INDEX idx_purchases_branch ON purchases(branch_id)',
+    );
     await db.execute(
       'CREATE INDEX idx_purchase_items_purchase ON purchase_items(purchase_id)',
     );
@@ -474,6 +497,9 @@ class DatabaseHelper {
     );
     await db.execute(
       'CREATE INDEX idx_receivings_status ON receivings(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_receivings_branch ON receivings(branch_id)',
     );
     await db.execute(
       'CREATE INDEX idx_receivings_invoice ON receivings(invoice_number)',
@@ -502,6 +528,9 @@ class DatabaseHelper {
       'CREATE INDEX idx_purchase_returns_status ON purchase_returns(status)',
     );
     await db.execute(
+      'CREATE INDEX idx_purchase_returns_branch ON purchase_returns(branch_id)',
+    );
+    await db.execute(
       'CREATE INDEX idx_purchase_return_items_return ON purchase_return_items(return_id)',
     );
     await db.execute(
@@ -517,6 +546,9 @@ class DatabaseHelper {
     );
     await db.execute(
       'CREATE INDEX idx_transactions_status ON transactions(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_transactions_branch ON transactions(branch_id)',
     );
     await db.execute(
       'CREATE INDEX idx_transactions_sync ON transactions(sync_status)',
@@ -542,6 +574,9 @@ class DatabaseHelper {
     // Stock Movements indexes
     await db.execute(
       'CREATE INDEX idx_stock_movements_product ON stock_movements(product_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_stock_movements_branch ON stock_movements(branch_id)',
     );
     await db.execute(
       'CREATE INDEX idx_stock_movements_date ON stock_movements(created_at)',

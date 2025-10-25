@@ -1,5 +1,4 @@
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/supplier_model.dart';
 
@@ -20,12 +19,8 @@ abstract class SupplierLocalDataSource {
 
 class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  SupplierLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  SupplierLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<SupplierModel>> getSuppliers({
@@ -99,12 +94,9 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   @override
   Future<void> insertSupplier(SupplierModel supplier) async {
     try {
-      // ✅ AUTO SYNC: Insert ke local DAN sync ke server jika online
-      await hybridSyncManager.insertRecord(
-        'suppliers',
-        supplier.toJson(),
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
+      // Backend V2: Direct database insert
+      final db = await databaseHelper.database;
+      await db.insert('suppliers', supplier.toJson());
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to insert supplier: $e',
@@ -115,14 +107,17 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
   @override
   Future<void> updateSupplier(SupplierModel supplier) async {
     try {
-      // ✅ AUTO SYNC: Update local DAN sync ke server jika online
-      await hybridSyncManager.updateRecord(
+      // Backend V2: Direct database update
+      final db = await databaseHelper.database;
+      final result = await db.update(
         'suppliers',
         supplier.toJson(),
         where: 'id = ?',
         whereArgs: [supplier.id],
-        syncImmediately: true, // Langsung sync ke server jika tersedia
       );
+      if (result == 0) {
+        throw app_exceptions.DatabaseException(message: 'Supplier not found');
+      }
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to update supplier: $e',
@@ -135,14 +130,17 @@ class SupplierLocalDataSourceImpl implements SupplierLocalDataSource {
     try {
       final now = DateTime.now().toIso8601String();
 
-      // ✅ AUTO SYNC: Soft delete ke local DAN sync ke server jika online
-      await hybridSyncManager.updateRecord(
+      // Backend V2: Direct database soft delete
+      final db = await databaseHelper.database;
+      final result = await db.update(
         'suppliers',
-        {'deleted_at': now, 'updated_at': now},
+        {'deleted_at': now, 'is_active': 0, 'updated_at': now},
         where: 'id = ?',
         whereArgs: [id],
-        syncImmediately: true,
       );
+      if (result == 0) {
+        throw app_exceptions.DatabaseException(message: 'Supplier not found');
+      }
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to delete supplier: $e',

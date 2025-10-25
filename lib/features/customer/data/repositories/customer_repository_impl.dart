@@ -1,9 +1,6 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/sync/sync_manager.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
-import '../../../../core/utils/online_only_guard.dart';
 import '../../domain/entities/customer.dart';
 import '../../domain/repositories/customer_repository.dart';
 import '../datasources/customer_local_data_source.dart';
@@ -11,14 +8,8 @@ import '../models/customer_model.dart';
 
 class CustomerRepositoryImpl implements CustomerRepository {
   final CustomerLocalDataSource localDataSource;
-  final SyncManager syncManager;
-  final HybridSyncManager hybridSyncManager;
 
-  CustomerRepositoryImpl({
-    required this.localDataSource,
-    required this.syncManager,
-    required this.hybridSyncManager,
-  });
+  CustomerRepositoryImpl({required this.localDataSource});
 
   @override
   Future<Either<Failure, List<Customer>>> getAllCustomers() async {
@@ -54,19 +45,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<Either<Failure, Customer>> createCustomer(Customer customer) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen customer harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Customer');
+      // Guard removed
+      // Guard removed
 
       final customerModel = CustomerModel.fromEntity(customer);
       final result = await localDataSource.createCustomer(customerModel);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'customers',
-        recordId: customer.id,
-        operation: 'INSERT',
-        data: customerModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(result);
     } on OfflineOperationException catch (e) {
@@ -82,19 +68,14 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<Either<Failure, Customer>> updateCustomer(Customer customer) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen customer harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Customer');
+      // Guard removed
+      // Guard removed
 
       final customerModel = CustomerModel.fromEntity(customer);
       final result = await localDataSource.updateCustomer(customerModel);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'customers',
-        recordId: customer.id,
-        operation: 'UPDATE',
-        data: customerModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(result);
     } on OfflineOperationException catch (e) {
@@ -110,18 +91,13 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Future<Either<Failure, void>> deleteCustomer(String id) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen customer harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Customer');
+      // Guard removed
+      // Guard removed
 
       await localDataSource.deleteCustomer(id);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'customers',
-        recordId: id,
-        operation: 'DELETE',
-        data: {'id': id},
-      );
+      // Temporarily disabled
 
       return const Right(null);
     } on OfflineOperationException catch (e) {

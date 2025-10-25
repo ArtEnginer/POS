@@ -1,7 +1,6 @@
 import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../../core/database/database_helper.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../models/sale_model.dart';
 import '../models/pending_sale_model.dart';
@@ -30,12 +29,8 @@ abstract class SaleLocalDataSource {
 
 class SaleLocalDataSourceImpl implements SaleLocalDataSource {
   final DatabaseHelper databaseHelper;
-  final HybridSyncManager hybridSyncManager;
 
-  SaleLocalDataSourceImpl({
-    required this.databaseHelper,
-    required this.hybridSyncManager,
-  });
+  SaleLocalDataSourceImpl({required this.databaseHelper});
 
   @override
   Future<List<SaleModel>> getAllSales() async {
@@ -154,34 +149,6 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
   @override
   Future<SaleModel> createSale(SaleModel sale) async {
     try {
-      // ✅ HYBRID MODE: Sales work both online and offline
-      // Insert to local DAN sync ke server jika online
-      await hybridSyncManager.insertRecord(
-        'transactions',
-        {
-          'id': sale.id,
-          'transaction_number': sale.saleNumber,
-          'customer_id': sale.customerId,
-          'cashier_id': sale.cashierId,
-          'cashier_name': sale.cashierName,
-          'subtotal': sale.subtotal,
-          'tax': sale.tax,
-          'discount': sale.discount,
-          'total': sale.total,
-          'payment_method': sale.paymentMethod,
-          'payment_amount': sale.paymentAmount,
-          'change_amount': sale.changeAmount,
-          'status': sale.status,
-          'notes': sale.notes,
-          'sync_status': 'PENDING',
-          'transaction_date': sale.saleDate.toIso8601String(),
-          'created_at': sale.createdAt.toIso8601String(),
-          'updated_at': sale.updatedAt.toIso8601String(),
-        },
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
-
-      // Insert sale items and update stock
       final db = await databaseHelper.database;
       await db.transaction((txn) async {
         for (var item in sale.items) {
@@ -207,7 +174,9 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
         }
       });
 
-      return await getSaleById(sale.id);
+      // Return the sale directly instead of calling getSaleById
+      // This avoids the circular dependency issue
+      return sale;
     } catch (e) {
       throw app_exceptions.DatabaseException(message: e.toString());
     }
@@ -217,26 +186,27 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
   Future<SaleModel> updateSale(SaleModel sale) async {
     try {
       // ✅ HYBRID MODE: Update local DAN sync ke server jika online
-      await hybridSyncManager.updateRecord(
-        'transactions',
-        {
-          'customer_id': sale.customerId,
-          'subtotal': sale.subtotal,
-          'tax': sale.tax,
-          'discount': sale.discount,
-          'total': sale.total,
-          'payment_method': sale.paymentMethod,
-          'payment_amount': sale.paymentAmount,
-          'change_amount': sale.changeAmount,
-          'status': sale.status,
-          'notes': sale.notes,
-          'sync_status': 'PENDING',
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [sale.id],
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.updateRecord(
+      //   'transactions',
+      //   {
+      //     'customer_id': sale.customerId,
+      //     'subtotal': sale.subtotal,
+      //     'tax': sale.tax,
+      //     'discount': sale.discount,
+      //     'total': sale.total,
+      //     'payment_method': sale.paymentMethod,
+      //     'payment_amount': sale.paymentAmount,
+      //     'change_amount': sale.changeAmount,
+      //     'status': sale.status,
+      //     'notes': sale.notes,
+      //     'sync_status': 'PENDING',
+      //     'updated_at': DateTime.now().toIso8601String(),
+      //   },
+      //   where: 'id = ?',
+      //   whereArgs: [sale.id],
+      //   syncImmediately: true,
+      // );
 
       return await getSaleById(sale.id);
     } catch (e) {
@@ -270,12 +240,13 @@ class SaleLocalDataSourceImpl implements SaleLocalDataSource {
       });
 
       // ✅ HYBRID MODE: Delete dari local DAN sync ke server jika online
-      await hybridSyncManager.deleteRecord(
-        'transactions',
-        where: 'id = ?',
-        whereArgs: [id],
-        syncImmediately: true, // Langsung sync ke server jika tersedia
-      );
+      // TODO: Replace with direct database operations
+      // await hybridSyncManager.deleteRecord(
+      //   'transactions',
+      //   where: 'id = ?',
+      //   whereArgs: [id],
+      //   syncImmediately: true,
+      // );
     } catch (e) {
       throw app_exceptions.DatabaseException(message: e.toString());
     }

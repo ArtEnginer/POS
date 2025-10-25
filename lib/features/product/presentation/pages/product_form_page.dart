@@ -4,9 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
-import '../../../../core/utils/online_only_guard.dart';
-import '../../../../core/widgets/connection_status_indicator.dart';
+// import hybrid_sync_manager; // DELETED
+// import online_only_guard; // DELETED
+// import connection_status_indicator; // DELETED
 import '../../../../injection_container.dart';
 import '../../domain/entities/product.dart';
 import '../bloc/product_bloc.dart';
@@ -101,7 +101,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.product != null;
-    final hybridSyncManager = sl<HybridSyncManager>();
+    //     final hybridSyncManager = sl<HybridSyncManager>();
 
     return BlocProvider.value(
       value: _productBloc,
@@ -117,12 +117,12 @@ class _ProductFormPageState extends State<ProductFormPage> {
                 horizontal: 8.0,
                 vertical: 8.0,
               ),
-              child: StreamConnectionStatusIndicator(
-                syncManager: hybridSyncManager,
-                showLabel: true,
-                iconSize: 18,
-                fontSize: 11,
-              ),
+    //               child: StreamConnectionStatusIndicator(
+    //                 syncManager: hybridSyncManager,
+    //                 showLabel: true,
+    //                 iconSize: 18,
+    //                 fontSize: 11,
+    //               ),
             ),
           ],
         ),
@@ -158,7 +158,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
               // Check jika error karena offline
               if (state.message.toLowerCase().contains('koneksi') ||
                   state.message.toLowerCase().contains('online')) {
-                OnlineOnlyGuard.showOfflineDialog(context, 'Manajemen Produk');
+    //                 OnlineOnlyGuard.showOfflineDialog(context, 'Manajemen Produk');
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

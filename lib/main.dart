@@ -1,34 +1,29 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
-import 'core/database/mysql_connector.dart';
-import 'core/database/mysql_config_manager.dart';
-import 'core/database/hybrid_sync_manager.dart';
-import 'core/database/sync_status_migration.dart';
+import 'core/auth/auth_service.dart';
 import 'injection_container.dart' as di;
+import 'features/auth/presentation/pages/login_page.dart';
 import 'features/dashboard/presentation/pages/dashboard_page.dart';
+import 'features/branch/presentation/bloc/branch_bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize date formatting for Indonesian locale
-  await initializeDateFormatting('id_ID', null);
-
-  // Initialize sqflite for web/desktop
-  if (kIsWeb) {
-    // Web platform
-    databaseFactory = databaseFactoryFfiWeb;
-  } else {
-    // Desktop platforms (Windows, Linux, macOS)
+  // Initialize sqflite_ffi for desktop platforms (Windows, Linux, macOS)
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+
+  // Initialize date formatting for Indonesian locale
+  await initializeDateFormatting('id_ID', null);
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
@@ -41,36 +36,8 @@ void main() async {
   await Hive.initFlutter();
   await Hive.openBox(AppConstants.hiveBoxName);
 
-  // Initialize dependencies
+  // Initialize dependencies (Backend V2 - Node.js + PostgreSQL)
   await di.init();
-
-  // Run database migration for sync_status column
-  try {
-    final migration = di.sl<SyncStatusMigration>();
-    await migration.migrateAll();
-    print('Database migration completed successfully');
-  } catch (e) {
-    print('Database migration error: $e');
-  }
-
-  // Initialize MySQL hybrid sync if configured
-  try {
-    final mysqlConfigManager = di.sl<MySQLConfigManager>();
-    if (mysqlConfigManager.isEnabled) {
-      final config = await mysqlConfigManager.getConfig();
-      if (config != null) {
-        final mysqlConnector = di.sl<MySQLConnector>();
-        await mysqlConnector.initialize(config);
-
-        final hybridSyncManager = di.sl<HybridSyncManager>();
-        await hybridSyncManager.updateSyncMode();
-        hybridSyncManager.startAutoSync();
-      }
-    }
-  } catch (e) {
-    // Silently fail if MySQL not configured
-    print('MySQL sync not initialized: $e');
-  }
 
   runApp(const MyApp());
 }
@@ -80,11 +47,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConstants.appName,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: const SplashScreen(),
+    return MultiBlocProvider(
+      providers: [BlocProvider(create: (_) => di.sl<BranchBloc>())],
+      child: MaterialApp(
+        title: AppConstants.appName,
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        home: const SplashScreen(),
+      ),
     );
   }
 }
@@ -105,10 +75,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _navigateToHome() async {
     await Future.delayed(const Duration(seconds: 2));
+
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const DashboardPage()),
-      );
+      // Check authentication status
+      final authService = di.sl<AuthService>();
+      final isAuthenticated = await authService.isAuthenticated();
+
+      if (isAuthenticated) {
+        // Already logged in, go to dashboard
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const DashboardPage()),
+        );
+      } else {
+        // Not logged in, go to login page
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
     }
   }
 

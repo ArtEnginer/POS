@@ -1,9 +1,6 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../../../../core/error/failures.dart';
-import '../../../../core/sync/sync_manager.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
-import '../../../../core/utils/online_only_guard.dart';
 import '../../domain/entities/purchase_return.dart';
 import '../../domain/repositories/purchase_return_repository.dart';
 import '../datasources/purchase_return_local_data_source.dart';
@@ -11,14 +8,8 @@ import '../models/purchase_return_model.dart';
 
 class PurchaseReturnRepositoryImpl implements PurchaseReturnRepository {
   final PurchaseReturnLocalDataSource localDataSource;
-  final SyncManager syncManager;
-  final HybridSyncManager hybridSyncManager;
 
-  PurchaseReturnRepositoryImpl({
-    required this.localDataSource,
-    required this.syncManager,
-    required this.hybridSyncManager,
-  });
+  PurchaseReturnRepositoryImpl({required this.localDataSource});
 
   @override
   Future<Either<Failure, List<PurchaseReturn>>> getAllPurchaseReturns() async {
@@ -82,19 +73,14 @@ class PurchaseReturnRepositoryImpl implements PurchaseReturnRepository {
   ) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen purchase return harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Purchase Return');
+      // Guard removed
+      // Guard removed
 
       final model = PurchaseReturnModel.fromEntity(purchaseReturn);
       final result = await localDataSource.createPurchaseReturn(model);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'purchase_returns',
-        recordId: purchaseReturn.id,
-        operation: 'INSERT',
-        data: model.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(result);
     } on app_exceptions.OfflineOperationException catch (e) {
@@ -112,19 +98,14 @@ class PurchaseReturnRepositoryImpl implements PurchaseReturnRepository {
   ) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen purchase return harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Purchase Return');
+      // Guard removed
+      // Guard removed
 
       final model = PurchaseReturnModel.fromEntity(purchaseReturn);
       final result = await localDataSource.updatePurchaseReturn(model);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'purchase_returns',
-        recordId: purchaseReturn.id,
-        operation: 'UPDATE',
-        data: model.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(result);
     } on app_exceptions.OfflineOperationException catch (e) {
@@ -140,18 +121,13 @@ class PurchaseReturnRepositoryImpl implements PurchaseReturnRepository {
   Future<Either<Failure, void>> deletePurchaseReturn(String id) async {
     try {
       // ✅ ONLINE-ONLY: Fitur manajemen purchase return harus online
-      final guard = OnlineOnlyGuard(syncManager: hybridSyncManager);
-      await guard.requireOnline('Manajemen Purchase Return');
+      // Guard removed
+      // Guard removed
 
       await localDataSource.deletePurchaseReturn(id);
 
       // Add to sync queue
-      await syncManager.addToSyncQueue(
-        tableName: 'purchase_returns',
-        recordId: id,
-        operation: 'DELETE',
-        data: {'id': id},
-      );
+      // Temporarily disabled
 
       return const Right(null);
     } on app_exceptions.OfflineOperationException catch (e) {

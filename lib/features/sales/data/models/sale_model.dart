@@ -3,6 +3,7 @@ import '../../domain/entities/sale.dart';
 class SaleModel extends Sale {
   const SaleModel({
     required super.id,
+    super.branchId,
     required super.saleNumber,
     super.customerId,
     required super.cashierId,
@@ -25,11 +26,12 @@ class SaleModel extends Sale {
 
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     return SaleModel(
-      id: json['id'] as String,
+      id: json['id']?.toString() ?? '',
+      branchId: json['branch_id']?.toString(),
       saleNumber:
           (json['transaction_number'] ?? json['sale_number'] ?? '') as String,
-      customerId: json['customer_id'] as String?,
-      cashierId: (json['cashier_id'] ?? '') as String,
+      customerId: json['customer_id']?.toString(),
+      cashierId: (json['cashier_id'] ?? json['user_id'] ?? '').toString(),
       cashierName: (json['cashier_name'] ?? 'Kasir') as String,
       saleDate: DateTime.parse(
         (json['transaction_date'] ??
@@ -68,6 +70,7 @@ class SaleModel extends Sale {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'branch_id': branchId,
       'sale_number': saleNumber,
       'customer_id': customerId,
       'cashier_id': cashierId,
@@ -91,6 +94,7 @@ class SaleModel extends Sale {
   factory SaleModel.fromEntity(Sale sale) {
     return SaleModel(
       id: sale.id,
+      branchId: sale.branchId,
       saleNumber: sale.saleNumber,
       customerId: sale.customerId,
       cashierId: sale.cashierId,

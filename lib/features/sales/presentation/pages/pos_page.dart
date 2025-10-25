@@ -5,8 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/print_settings.dart';
-import '../../../../core/widgets/connection_status_indicator.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
+// import connection_status_indicator; // DELETED
+// import hybrid_sync_manager; // DELETED
 import '../../../../injection_container.dart' as di;
 import '../../../product/domain/entities/product.dart';
 import '../../../product/presentation/bloc/product_bloc.dart';
@@ -48,15 +48,18 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
   bool _isLoadingPending =
       false; // Flag to indicate loading pending transaction
 
-  // Hybrid Sync Manager untuk monitoring status koneksi
-  late final HybridSyncManager _hybridSyncManager;
+  // Hybrid Sync Manager REMOVED - Backend V2 handles connection status
+  // late final HybridSyncManager _hybridSyncManager;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _hybridSyncManager = di.sl<HybridSyncManager>();
     _loadInitialData();
+    // Auto-load pending transaction jika ada
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SaleBloc>().add(sale_event.LoadPendingSales());
+    });
   }
 
   @override
@@ -115,16 +118,16 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
           ],
         ),
         actions: [
-          // Status Koneksi Online/Offline
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-            child: StreamConnectionStatusIndicator(
-              syncManager: _hybridSyncManager,
-              showLabel: true,
-              iconSize: 20,
-              fontSize: 11,
-            ),
-          ),
+          // Status Koneksi Online/Offline - REMOVED, Backend V2 handles connection
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+          //   child: StreamConnectionStatusIndicator(
+          //     syncManager: _hybridSyncManager,
+          //     showLabel: true,
+          //     iconSize: 20,
+          //     fontSize: 11,
+          //   ),
+          // ),
           IconButton(
             icon: const Icon(Icons.print_outlined),
             onPressed: _openPrinterSettings,
@@ -194,6 +197,11 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
                   if (state.message.contains('disimpan')) {
                     _resetTransaction();
                   }
+                }
+              } else if (state is PendingSalesLoaded) {
+                // Auto-load last pending sale if available
+                if (state.pendingSales.isNotEmpty) {
+                  _loadPendingTransactionToCart(state.pendingSales.last);
                 }
               } else if (state is PendingSaleLoaded) {
                 _loadPendingTransactionToCart(state.pendingSale);
@@ -1255,12 +1263,10 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
       );
       return;
     }
-
     setState(() {
       final existingIndex = _cartItems.indexWhere(
         (item) => item.productId == product.id,
       );
-
       if (existingIndex != -1) {
         if (_cartItems[existingIndex].quantity < product.stock) {
           _cartItems[existingIndex].quantity++;
@@ -1283,12 +1289,14 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
           ),
         );
       }
+      _onCartChanged();
     });
   }
 
   void _removeFromCart(int index) {
     setState(() {
       _cartItems.removeAt(index);
+      _onCartChanged();
     });
   }
 
@@ -1296,6 +1304,7 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
     setState(() {
       if (_cartItems[index].quantity < _cartItems[index].maxStock) {
         _cartItems[index].quantity++;
+        _onCartChanged();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1311,8 +1320,9 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
     setState(() {
       if (_cartItems[index].quantity > 1) {
         _cartItems[index].quantity--;
+        _onCartChanged();
       } else {
-        _cartItems.removeAt(index);
+        _removeFromCart(index);
       }
     });
   }
@@ -1899,56 +1909,34 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
   }
 
   void _loadPendingTransactionToCart(PendingSale pendingSale) {
-    // Set flag to prevent reset when delete succeeds
-    _isLoadingPending = true;
-
     setState(() {
-      // Clear current cart
       _cartItems.clear();
-
-      // Load items from pending
-      for (var item in pendingSale.items) {
+      for (final item in pendingSale.items) {
         _cartItems.add(
           _CartItem(
             productId: item.productId,
             productName: item.productName,
             price: item.price,
             quantity: item.quantity,
-            maxStock: 9999, // We'll update this when checking stock
+            maxStock: 9999, // Atur sesuai kebutuhan
           ),
         );
       }
-
-      // Load customer
-      if (pendingSale.customerId != null) {
-        _selectedCustomer = _allCustomers.firstWhere(
-          (c) => c.id == pendingSale.customerId,
-          orElse:
-              () => Customer(
-                id: pendingSale.customerId!,
-                name: pendingSale.customerName ?? 'Pelanggan',
-                createdAt: DateTime.now(),
-                updatedAt: DateTime.now(),
-              ),
-        );
-      }
-
-      // Load notes
-      if (pendingSale.notes != null) {
-        _notesController.text = pendingSale.notes!;
-      }
+      _selectedCustomer =
+          pendingSale.customerId != null
+              ? _allCustomers.firstWhere(
+                (c) => c.id == pendingSale.customerId,
+                orElse: () => _selectedCustomer ?? _allCustomers.first,
+              )
+              : null;
     });
+  }
 
-    // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Transaksi ${pendingSale.pendingNumber} dimuat'),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    // Delete the pending transaction after loading
-    context.read<SaleBloc>().add(sale_event.DeletePendingSale(pendingSale.id));
+  void _onCartChanged() {
+    // Simpan otomatis ke pending setiap ada perubahan keranjang
+    if (_cartItems.isNotEmpty) {
+      _savePendingTransaction();
+    }
   }
 
   @override

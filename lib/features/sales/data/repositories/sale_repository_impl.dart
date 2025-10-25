@@ -1,8 +1,6 @@
 import 'package:dartz/dartz.dart';
 import '../../../../core/error/exceptions.dart';
 import '../../../../core/error/failures.dart';
-import '../../../../core/sync/sync_manager.dart';
-import '../../../../core/database/hybrid_sync_manager.dart';
 import '../../domain/entities/sale.dart';
 import '../../domain/entities/pending_sale.dart';
 import '../../domain/repositories/sale_repository.dart';
@@ -12,14 +10,8 @@ import '../models/pending_sale_model.dart';
 
 class SaleRepositoryImpl implements SaleRepository {
   final SaleLocalDataSource localDataSource;
-  final SyncManager syncManager;
-  final HybridSyncManager hybridSyncManager;
 
-  SaleRepositoryImpl({
-    required this.localDataSource,
-    required this.syncManager,
-    required this.hybridSyncManager,
-  });
+  SaleRepositoryImpl({required this.localDataSource});
 
   @override
   Future<Either<Failure, List<Sale>>> getAllSales() async {
@@ -37,6 +29,10 @@ class SaleRepositoryImpl implements SaleRepository {
       final sale = await localDataSource.getSaleById(id);
       return Right(sale);
     } on CacheException catch (e) {
+      // User-friendly message jika transaksi tidak ditemukan
+      if (e.message.contains('Transaksi tidak ditemukan')) {
+        return Left(CacheFailure(message: 'Transaksi tidak ditemukan'));
+      }
       return Left(CacheFailure(message: e.message));
     }
   }
@@ -74,12 +70,7 @@ class SaleRepositoryImpl implements SaleRepository {
       final createdSale = await localDataSource.createSale(saleModel);
 
       // Add to sync queue for automatic sync
-      await syncManager.addToSyncQueue(
-        tableName: 'transactions',
-        recordId: sale.id,
-        operation: 'INSERT',
-        data: saleModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(createdSale);
     } on DatabaseException catch (e) {
@@ -98,12 +89,7 @@ class SaleRepositoryImpl implements SaleRepository {
       final updatedSale = await localDataSource.updateSale(saleModel);
 
       // Add to sync queue for automatic sync
-      await syncManager.addToSyncQueue(
-        tableName: 'transactions',
-        recordId: sale.id,
-        operation: 'UPDATE',
-        data: saleModel.toJson(),
-      );
+      // Temporarily disabled
 
       return Right(updatedSale);
     } on DatabaseException catch (e) {
@@ -121,12 +107,7 @@ class SaleRepositoryImpl implements SaleRepository {
       await localDataSource.deleteSale(id);
 
       // Add to sync queue for automatic sync
-      await syncManager.addToSyncQueue(
-        tableName: 'transactions',
-        recordId: id,
-        operation: 'DELETE',
-        data: {'id': id},
-      );
+      // Temporarily disabled
 
       return const Right(null);
     } on DatabaseException catch (e) {

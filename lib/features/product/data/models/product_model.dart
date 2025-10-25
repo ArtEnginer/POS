@@ -3,6 +3,7 @@ import '../../domain/entities/product.dart';
 class ProductModel extends Product {
   const ProductModel({
     required super.id,
+    super.branchId,
     required super.plu,
     required super.barcode,
     required super.name,
@@ -24,12 +25,13 @@ class ProductModel extends Product {
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
-      id: json['id'] as String,
+      id: json['id']?.toString() ?? '',
+      branchId: json['branch_id']?.toString(),
       plu: json['plu'] as String,
       barcode: json['barcode'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
-      categoryId: json['category_id'] as String?,
+      categoryId: json['category_id']?.toString(),
       categoryName: json['category_name'] as String?,
       unit: json['unit'] as String,
       purchasePrice: (json['purchase_price'] as num).toDouble(),
@@ -51,6 +53,7 @@ class ProductModel extends Product {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'branch_id': branchId,
       'plu': plu,
       'barcode': barcode,
       'name': name,
@@ -73,6 +76,7 @@ class ProductModel extends Product {
   factory ProductModel.fromEntity(Product product) {
     return ProductModel(
       id: product.id,
+      branchId: product.branchId,
       plu: product.plu,
       barcode: product.barcode,
       name: product.name,
