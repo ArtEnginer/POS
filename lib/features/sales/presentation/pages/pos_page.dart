@@ -1244,7 +1244,7 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
       (p) => p.barcode == barcode,
       orElse:
           () => _allProducts.firstWhere(
-            (p) => p.plu == barcode,
+            (p) => p.sku == barcode,
             orElse: () => throw Exception('Produk tidak ditemukan'),
           ),
     );
@@ -2013,7 +2013,7 @@ class _ProductSelectionDialogState extends State<_ProductSelectionDialog> {
                       product.barcode.toLowerCase().contains(
                         query.toLowerCase(),
                       ) ||
-                      product.plu.toLowerCase().contains(query.toLowerCase()),
+                      product.sku.toLowerCase().contains(query.toLowerCase()),
                 )
                 .toList();
       }

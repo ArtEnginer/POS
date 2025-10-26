@@ -287,13 +287,46 @@ export const updateProduct = async (req, res) => {
     throw new NotFoundError("Product not found");
   }
 
-  // Build update query dynamically
-  const fields = Object.keys(updates);
-  const values = Object.values(updates);
+  // Map camelCase to snake_case for PostgreSQL
+  const fieldMapping = {
+    sku: "sku",
+    barcode: "barcode",
+    name: "name",
+    description: "description",
+    categoryId: "category_id",
+    unit: "unit",
+    costPrice: "cost_price",
+    sellingPrice: "selling_price",
+    minStock: "min_stock",
+    maxStock: "max_stock",
+    reorderPoint: "reorder_point",
+    isActive: "is_active",
+    isTrackable: "is_trackable",
+    imageUrl: "image_url",
+    attributes: "attributes",
+    taxRate: "tax_rate",
+    discountPercentage: "discount_percentage",
+  };
 
-  const setClause = fields
-    .map((field, index) => `${field} = $${index + 2}`)
-    .join(", ");
+  // Build update query with proper field mapping
+  const fields = [];
+  const values = [];
+  let paramIndex = 2; // Start from 2 because $1 is for id
+
+  Object.keys(updates).forEach((key) => {
+    const dbField = fieldMapping[key];
+    if (dbField) {
+      fields.push(`${dbField} = $${paramIndex}`);
+      values.push(updates[key]);
+      paramIndex++;
+    }
+  });
+
+  if (fields.length === 0) {
+    throw new ValidationError("No valid fields to update");
+  }
+
+  const setClause = fields.join(", ");
 
   const result = await db.query(
     `UPDATE products SET ${setClause}, updated_at = NOW() WHERE id = $1 RETURNING *`,

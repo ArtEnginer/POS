@@ -15,6 +15,7 @@ import 'core/database/database_helper.dart';
 
 // Features - Product
 import 'features/product/data/datasources/product_local_data_source.dart';
+import 'features/product/data/datasources/product_remote_data_source.dart';
 import 'features/product/data/repositories/product_repository_impl.dart';
 import 'features/product/domain/repositories/product_repository.dart';
 import 'features/product/domain/usecases/product_usecases.dart';
@@ -73,14 +74,19 @@ import 'features/branch/domain/repositories/branch_repository.dart';
 import 'features/branch/domain/usecases/branch_usecases.dart';
 import 'features/branch/presentation/bloc/branch_bloc.dart';
 
+// Core - Offline-First Support
+import 'core/network/connectivity_manager.dart';
+import 'core/sync/sync_manager.dart';
+import 'core/sync/background_sync_service.dart';
+
 final sl = GetIt.instance;
 
 Future<void> init() async {
   // ========== Core Services (Initialize First) ==========
 
   // External
-  sl.registerLazySingleton(() => Connectivity());
-  sl.registerLazySingleton(
+  sl.registerLazySingleton<Connectivity>(() => Connectivity());
+  sl.registerLazySingleton<Logger>(
     () => Logger(
       printer: PrettyPrinter(
         methodCount: 2,
@@ -95,22 +101,47 @@ Future<void> init() async {
 
   // Shared Preferences
   final prefs = await SharedPreferences.getInstance();
-  sl.registerLazySingleton(() => prefs);
+  sl.registerLazySingleton<SharedPreferences>(() => prefs);
 
   // Local Database (SQLite for offline caching only)
-  sl.registerLazySingleton(() => DatabaseHelper.instance);
+  sl.registerLazySingleton<DatabaseHelper>(() => DatabaseHelper.instance);
 
   // Network
   sl.registerLazySingleton<NetworkInfo>(() => NetworkInfoImpl(sl()));
 
   // Auth Service (MUST be initialized before ApiClient)
-  sl.registerLazySingleton(() => AuthService(sl(), Dio()));
+  sl.registerLazySingleton<AuthService>(() => AuthService(sl(), Dio()));
 
   // API Client (Backend V2 - Node.js + PostgreSQL)
-  sl.registerLazySingleton(() => ApiClient(sl()));
+  sl.registerLazySingleton<ApiClient>(() => ApiClient(sl()));
 
   // Socket Service (Real-time sync with Socket.IO)
-  sl.registerLazySingleton(() => SocketService(sl(), sl()));
+  sl.registerLazySingleton<SocketService>(() => SocketService(sl(), sl()));
+
+  // ========== Offline-First & Sync Services ==========
+
+  // Connectivity Manager
+  sl.registerLazySingleton<ConnectivityManager>(
+    () => ConnectivityManager(
+      connectivity: sl<Connectivity>(),
+      logger: sl<Logger>(),
+    ),
+  );
+
+  // Sync Manager
+  sl.registerLazySingleton<SyncManager>(
+    () => SyncManager(dbHelper: sl<DatabaseHelper>(), logger: sl<Logger>()),
+  );
+
+  // Background Sync Service
+  sl.registerLazySingleton<BackgroundSyncService>(
+    () => BackgroundSyncService(
+      syncManager: sl<SyncManager>(),
+      connectivityManager: sl<ConnectivityManager>(),
+      apiClient: sl<ApiClient>(),
+      logger: sl<Logger>(),
+    ),
+  );
 
   // ========== Features - Branch ==========
 
@@ -138,12 +169,12 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<BranchRepository>(
-    () => BranchRepositoryImpl(remoteDataSource: sl()),
+    () => BranchRepositoryImpl(remoteDataSource: sl<BranchRemoteDataSource>()),
   );
 
   // Data sources
   sl.registerLazySingleton<BranchRemoteDataSource>(
-    () => BranchRemoteDataSourceImpl(apiClient: sl()),
+    () => BranchRemoteDataSourceImpl(apiClient: sl<ApiClient>()),
   );
 
   // ========== Features - Product ==========
@@ -176,12 +207,25 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<ProductRepository>(
-    () => ProductRepositoryImpl(localDataSource: sl()),
+    () => ProductRepositoryImpl(
+      localDataSource: sl<ProductLocalDataSource>(),
+      remoteDataSource: sl<ProductRemoteDataSource>(),
+      networkInfo: sl<NetworkInfo>(),
+      socketService: sl<SocketService>(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<ProductLocalDataSource>(
-    () => ProductLocalDataSourceImpl(databaseHelper: sl()),
+    () => ProductLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
+  );
+
+  sl.registerLazySingleton<ProductRemoteDataSource>(
+    () => ProductRemoteDataSourceImpl(
+      apiClient: sl<ApiClient>(),
+      socketService: sl<SocketService>(),
+      authService: sl<AuthService>(),
+    ),
   );
 
   // ========== Features - Purchase ==========
@@ -214,12 +258,13 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<PurchaseRepository>(
-    () => PurchaseRepositoryImpl(localDataSource: sl()),
+    () =>
+        PurchaseRepositoryImpl(localDataSource: sl<PurchaseLocalDataSource>()),
   );
 
   // Data sources
   sl.registerLazySingleton<PurchaseLocalDataSource>(
-    () => PurchaseLocalDataSourceImpl(databaseHelper: sl()),
+    () => PurchaseLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 
   // ========== Features - Supplier ==========
@@ -242,12 +287,13 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<SupplierRepository>(
-    () => SupplierRepositoryImpl(localDataSource: sl()),
+    () =>
+        SupplierRepositoryImpl(localDataSource: sl<SupplierLocalDataSource>()),
   );
 
   // Data sources
   sl.registerLazySingleton<SupplierLocalDataSource>(
-    () => SupplierLocalDataSourceImpl(databaseHelper: sl()),
+    () => SupplierLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 
   // ========== Features - Receiving ==========
@@ -278,12 +324,14 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<ReceivingRepository>(
-    () => ReceivingRepositoryImpl(localDataSource: sl()),
+    () => ReceivingRepositoryImpl(
+      localDataSource: sl<ReceivingLocalDataSource>(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<ReceivingLocalDataSource>(
-    () => ReceivingLocalDataSourceImpl(databaseHelper: sl()),
+    () => ReceivingLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 
   // ========== Features - Purchase Return ==========
@@ -314,12 +362,15 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<PurchaseReturnRepository>(
-    () => PurchaseReturnRepositoryImpl(localDataSource: sl()),
+    () => PurchaseReturnRepositoryImpl(
+      localDataSource: sl<PurchaseReturnLocalDataSource>(),
+    ),
   );
 
   // Data sources
   sl.registerLazySingleton<PurchaseReturnLocalDataSource>(
-    () => PurchaseReturnLocalDataSourceImpl(databaseHelper: sl()),
+    () =>
+        PurchaseReturnLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 
   // ========== Features - Sales ==========
@@ -362,12 +413,12 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<SaleRepository>(
-    () => SaleRepositoryImpl(localDataSource: sl()),
+    () => SaleRepositoryImpl(localDataSource: sl<SaleLocalDataSource>()),
   );
 
   // Data sources
   sl.registerLazySingleton<SaleLocalDataSource>(
-    () => SaleLocalDataSourceImpl(databaseHelper: sl()),
+    () => SaleLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 
   // ========== Features - Customer ==========
@@ -396,11 +447,12 @@ Future<void> init() async {
 
   // Repository
   sl.registerLazySingleton<CustomerRepository>(
-    () => CustomerRepositoryImpl(localDataSource: sl()),
+    () =>
+        CustomerRepositoryImpl(localDataSource: sl<CustomerLocalDataSource>()),
   );
 
   // Data sources
   sl.registerLazySingleton<CustomerLocalDataSource>(
-    () => CustomerLocalDataSourceImpl(databaseHelper: sl()),
+    () => CustomerLocalDataSourceImpl(databaseHelper: sl<DatabaseHelper>()),
   );
 }

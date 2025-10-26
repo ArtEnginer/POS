@@ -48,12 +48,14 @@ class SocketService {
     try {
       final accessToken = await _authService.getAccessToken();
       if (accessToken == null) {
-        throw Exception('No access token available');
+        _logger.w('No access token available, skipping socket connection');
+        return; // Changed from throw to return
       }
 
       _currentBranchId = await _authService.getCurrentBranchId();
       if (_currentBranchId == null) {
-        throw Exception('No branch ID available');
+        _logger.w('No branch ID available, skipping socket connection');
+        return; // Changed from throw to return
       }
 
       _logger.i('Connecting to Socket.IO server: ${ApiConstants.socketUrl}');
@@ -74,7 +76,7 @@ class SocketService {
       _socket!.connect();
     } catch (e) {
       _logger.e('Socket connection error: $e');
-      rethrow;
+      // Don't rethrow - just log the error
     }
   }
 

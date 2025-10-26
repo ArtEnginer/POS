@@ -50,13 +50,25 @@ export const authenticateBranch = async (req, res, next) => {
       throw new UnauthorizedError("API key required");
     }
 
-    // Verify API key from cache or database
-    const branchId = await cache.get(`apikey:${apiKey}`);
+    // Verify API key from cache
+    let branchId = await cache.get(`apikey:${apiKey}`);
 
     if (!branchId) {
       // Fetch from database if not in cache
-      // TODO: Implement database check
-      throw new UnauthorizedError("Invalid API key");
+      const { default: db } = await import("../config/database.js");
+      const result = await db.query(
+        "SELECT id FROM branches WHERE api_key = $1 AND is_active = true AND deleted_at IS NULL",
+        [apiKey]
+      );
+
+      if (result.rows.length === 0) {
+        throw new UnauthorizedError("Invalid API key");
+      }
+
+      branchId = result.rows[0].id.toString();
+
+      // Cache for future use
+      await cache.set(`apikey:${apiKey}`, branchId, 7 * 24 * 60 * 60);
     }
 
     // Attach branch to request

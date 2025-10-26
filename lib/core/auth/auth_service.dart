@@ -225,10 +225,14 @@ class AuthService {
   /// Get current branch ID
   Future<String?> getCurrentBranchId() async {
     final branchData = await getBranchData();
-    if (branchData != null) return branchData['id'];
+    if (branchData != null && branchData['id'] != null) {
+      return branchData['id'].toString();
+    }
 
     final userData = await getUserProfile();
-    if (userData != null) return userData['branchId'];
+    if (userData != null && userData['branchId'] != null) {
+      return userData['branchId'].toString();
+    }
 
     return null;
   }

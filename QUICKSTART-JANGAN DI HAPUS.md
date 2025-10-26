@@ -38,7 +38,8 @@ choco install redis-64
 choco install nodejs-lts
 
 # Git (if not installed)
-choco install git
+
+
 ```
 
 ### Option B: Manual Installation

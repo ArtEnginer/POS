@@ -139,7 +139,7 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
             productId: product.id,
             productName: product.name,
             quantity: 1,
-            price: product.purchasePrice,
+            price: product.costPrice,
           ),
         );
       }
@@ -1067,7 +1067,7 @@ class _ProductSelectorSheetState extends State<_ProductSelectorSheet> {
                       title: Text(product.name),
                       subtitle: Text(
                         'Stok: ${product.stock} ${product.unit}\n'
-                        'Rp ${NumberFormat('#,###', 'id_ID').format(product.purchasePrice)}',
+                        'Rp ${NumberFormat('#,###', 'id_ID').format(product.costPrice)}',
                       ),
                       trailing: const Icon(
                         Icons.add_circle,

@@ -147,7 +147,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'PLU: ${product.plu}',
+                      'SKU: ${product.sku}',
                       style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -200,7 +200,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   children: [
                     _buildInfoRow(
                       'Harga Beli',
-                      currencyFormat.format(product.purchasePrice),
+                      currencyFormat.format(product.costPrice),
                       valueColor: AppColors.textPrimary,
                     ),
                     const SizedBox(height: 12),

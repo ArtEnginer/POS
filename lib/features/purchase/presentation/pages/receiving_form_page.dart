@@ -1527,7 +1527,7 @@ class _AddItemDialogState extends State<_AddItemDialog> {
   void _selectProduct(Product product) {
     setState(() {
       _selectedProduct = product;
-      _priceController.text = product.purchasePrice.toStringAsFixed(0);
+      _priceController.text = product.costPrice.toStringAsFixed(0);
     });
   }
 
@@ -1626,7 +1626,7 @@ class _AddItemDialogState extends State<_AddItemDialog> {
                               ),
                             ),
                             Text(
-                              'PLU: ${_selectedProduct!.plu}',
+                              'sku: ${_selectedProduct!.sku}',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 13,
@@ -1689,14 +1689,14 @@ class _AddItemDialogState extends State<_AddItemDialog> {
                               ),
                               title: Text(product.name),
                               subtitle: Text(
-                                'PLU: ${product.plu} | Stok: ${product.stock}',
+                                'sku: ${product.sku} | Stok: ${product.stock}',
                               ),
                               trailing: Text(
                                 NumberFormat.currency(
                                   locale: 'id_ID',
                                   symbol: 'Rp ',
                                   decimalDigits: 0,
-                                ).format(product.purchasePrice),
+                                ).format(product.costPrice),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),

@@ -3,19 +3,25 @@ import 'package:equatable/equatable.dart';
 class Product extends Equatable {
   final String id;
   final String? branchId;
-  final String plu;
+  final String sku;
   final String barcode;
   final String name;
   final String? description;
   final String? categoryId;
   final String? categoryName;
   final String unit;
-  final double purchasePrice;
+  final double costPrice;
   final double sellingPrice;
   final int stock;
   final int minStock;
+  final int maxStock;
+  final int reorderPoint;
   final String? imageUrl;
   final bool isActive;
+  final bool isTrackable;
+  final Map<String, dynamic>? attributes;
+  final double taxRate;
+  final double discountPercentage;
   final String syncStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -24,46 +30,70 @@ class Product extends Equatable {
   const Product({
     required this.id,
     this.branchId,
-    required this.plu,
+    required this.sku,
     required this.barcode,
     required this.name,
     this.description,
     this.categoryId,
     this.categoryName,
     required this.unit,
-    required this.purchasePrice,
+    required this.costPrice,
     required this.sellingPrice,
     required this.stock,
     this.minStock = 0,
+    this.maxStock = 0,
+    this.reorderPoint = 0,
     this.imageUrl,
     this.isActive = true,
+    this.isTrackable = true,
+    this.attributes,
+    this.taxRate = 0,
+    this.discountPercentage = 0,
     this.syncStatus = 'SYNCED',
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
   });
 
+  // Computed properties
   bool get isLowStock => stock <= minStock;
   bool get isOutOfStock => stock <= 0;
-  double get profit => sellingPrice - purchasePrice;
-  double get profitMargin => ((profit / purchasePrice) * 100);
+  bool get needsReorder => stock <= reorderPoint;
+  double get profit => sellingPrice - costPrice;
+  double get profitMargin => costPrice > 0 ? ((profit / costPrice) * 100) : 0;
+  double get finalPrice =>
+      sellingPrice - (sellingPrice * discountPercentage / 100);
+  double get priceWithTax => finalPrice + (finalPrice * taxRate / 100);
+
+  // Backward compatibility getters (TEMPORARY - will be removed after UI update)
+  @Deprecated('Use sku instead')
+  String get plu => sku;
+
+  @Deprecated('Use costPrice instead')
+  double get purchasePrice => costPrice;
 
   Product copyWith({
     String? id,
     String? branchId,
-    String? plu,
+    String? sku,
     String? barcode,
     String? name,
     String? description,
     String? categoryId,
     String? categoryName,
     String? unit,
-    double? purchasePrice,
+    double? costPrice,
     double? sellingPrice,
     int? stock,
     int? minStock,
+    int? maxStock,
+    int? reorderPoint,
     String? imageUrl,
     bool? isActive,
+    bool? isTrackable,
+    Map<String, dynamic>? attributes,
+    double? taxRate,
+    double? discountPercentage,
     String? syncStatus,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -72,19 +102,25 @@ class Product extends Equatable {
     return Product(
       id: id ?? this.id,
       branchId: branchId ?? this.branchId,
-      plu: plu ?? this.plu,
+      sku: sku ?? this.sku,
       barcode: barcode ?? this.barcode,
       name: name ?? this.name,
       description: description ?? this.description,
       categoryId: categoryId ?? this.categoryId,
       categoryName: categoryName ?? this.categoryName,
       unit: unit ?? this.unit,
-      purchasePrice: purchasePrice ?? this.purchasePrice,
+      costPrice: costPrice ?? this.costPrice,
       sellingPrice: sellingPrice ?? this.sellingPrice,
       stock: stock ?? this.stock,
       minStock: minStock ?? this.minStock,
+      maxStock: maxStock ?? this.maxStock,
+      reorderPoint: reorderPoint ?? this.reorderPoint,
       imageUrl: imageUrl ?? this.imageUrl,
       isActive: isActive ?? this.isActive,
+      isTrackable: isTrackable ?? this.isTrackable,
+      attributes: attributes ?? this.attributes,
+      taxRate: taxRate ?? this.taxRate,
+      discountPercentage: discountPercentage ?? this.discountPercentage,
       syncStatus: syncStatus ?? this.syncStatus,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -96,19 +132,25 @@ class Product extends Equatable {
   List<Object?> get props => [
     id,
     branchId,
-    plu,
+    sku,
     barcode,
     name,
     description,
     categoryId,
     categoryName,
     unit,
-    purchasePrice,
+    costPrice,
     sellingPrice,
     stock,
     minStock,
+    maxStock,
+    reorderPoint,
     imageUrl,
     isActive,
+    isTrackable,
+    attributes,
+    taxRate,
+    discountPercentage,
     syncStatus,
     createdAt,
     updatedAt,

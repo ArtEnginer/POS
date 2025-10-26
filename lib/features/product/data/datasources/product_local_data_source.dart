@@ -14,6 +14,12 @@ abstract class ProductLocalDataSource {
   Future<void> deleteProduct(String id);
   Future<void> updateStock(String id, int quantity);
   Future<String> generatePLU();
+
+  /// Sync all products from server - replaces local cache entirely
+  Future<void> syncAllProducts(List<ProductModel> products);
+
+  /// Upsert product - insert if not exists, update if exists
+  Future<void> upsertProduct(ProductModel product);
 }
 
 class ProductLocalDataSourceImpl implements ProductLocalDataSource {
@@ -157,7 +163,7 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
     try {
       // Backend V2: Direct database insert, API handles real-time sync via Socket.IO
       final db = await databaseHelper.database;
-      await db.insert('products', product.toJson());
+      await db.insert('products', product.toLocalJson());
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to insert product: $e',
@@ -172,7 +178,7 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
       final db = await databaseHelper.database;
       final result = await db.update(
         'products',
-        product.toJson(),
+        product.toLocalJson(),
         where: 'id = ?',
         whereArgs: [product.id],
       );
@@ -279,6 +285,52 @@ class ProductLocalDataSourceImpl implements ProductLocalDataSource {
     } catch (e) {
       throw app_exceptions.DatabaseException(
         message: 'Failed to generate PLU: $e',
+      );
+    }
+  }
+
+  @override
+  Future<void> syncAllProducts(List<ProductModel> products) async {
+    try {
+      final db = await databaseHelper.database;
+
+      // Use transaction for atomic operation
+      await db.transaction((txn) async {
+        // Step 1: Clear all existing products (hard delete for sync)
+        await txn.delete('products');
+
+        // Step 2: Insert all products from server
+        for (var product in products) {
+          await txn.insert('products', product.toLocalJson());
+        }
+      });
+    } catch (e) {
+      throw app_exceptions.DatabaseException(
+        message: 'Failed to sync products: $e',
+      );
+    }
+  }
+
+  @override
+  Future<void> upsertProduct(ProductModel product) async {
+    try {
+      final db = await databaseHelper.database;
+
+      // Try to update first
+      final updateResult = await db.update(
+        'products',
+        product.toLocalJson(),
+        where: 'id = ?',
+        whereArgs: [product.id],
+      );
+
+      // If no rows affected, insert new
+      if (updateResult == 0) {
+        await db.insert('products', product.toLocalJson());
+      }
+    } catch (e) {
+      throw app_exceptions.DatabaseException(
+        message: 'Failed to upsert product: $e',
       );
     }
   }

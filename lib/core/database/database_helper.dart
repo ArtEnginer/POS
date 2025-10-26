@@ -8,8 +8,8 @@ class DatabaseHelper {
   static Database? _database;
   static final DatabaseHelper instance = DatabaseHelper._internal();
 
-  // Current database version
-  static const int _currentVersion = 1;
+  // Current database version - INCREMENTED for barcode fix
+  static const int _currentVersion = 2;
 
   DatabaseHelper._internal();
 
@@ -59,19 +59,25 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE products (
         id TEXT PRIMARY KEY,
-        plu TEXT UNIQUE,
-        barcode TEXT UNIQUE,
+        sku TEXT UNIQUE NOT NULL,
+        barcode TEXT,
         name TEXT NOT NULL,
         description TEXT,
         category_id TEXT,
-        unit TEXT,
-        purchase_price REAL NOT NULL,
+        unit TEXT DEFAULT 'PCS',
+        cost_price REAL DEFAULT 0,
         selling_price REAL NOT NULL,
-        stock INTEGER NOT NULL DEFAULT 0,
         min_stock INTEGER DEFAULT 0,
-        image_url TEXT,
+        max_stock INTEGER DEFAULT 0,
+        reorder_point INTEGER DEFAULT 0,
+        stock INTEGER NOT NULL DEFAULT 0,
         is_active INTEGER DEFAULT 1,
-        branch_id INTEGER,
+        is_trackable INTEGER DEFAULT 1,
+        image_url TEXT,
+        attributes TEXT DEFAULT '{}',
+        tax_rate REAL DEFAULT 0,
+        discount_percentage REAL DEFAULT 0,
+        branch_id TEXT,
         sync_status TEXT DEFAULT 'SYNCED',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -423,19 +429,19 @@ class DatabaseHelper {
       )
     ''');
 
-    // Sync Queue Table
+    // Sync Queue Table (Offline-first sync management)
     await db.execute('''
       CREATE TABLE sync_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        table_name TEXT NOT NULL,
-        record_id TEXT NOT NULL,
+        id TEXT PRIMARY KEY,
         operation TEXT NOT NULL,
+        entityType TEXT NOT NULL,
         data TEXT NOT NULL,
-        status TEXT DEFAULT 'PENDING',
-        retry_count INTEGER DEFAULT 0,
-        error_message TEXT,
-        created_at TEXT NOT NULL,
-        synced_at TEXT
+        createdAt TEXT NOT NULL,
+        syncedAt TEXT,
+        retryCount INTEGER NOT NULL DEFAULT 0,
+        isResolved INTEGER NOT NULL DEFAULT 0,
+        conflictResolution TEXT,
+        conflictDetails TEXT
       )
     ''');
 
@@ -452,7 +458,7 @@ class DatabaseHelper {
   // ==================== INDEXES ====================
   Future<void> _createIndexes(Database db) async {
     // Products indexes
-    await db.execute('CREATE INDEX idx_products_plu ON products(plu)');
+    await db.execute('CREATE INDEX idx_products_sku ON products(sku)');
     await db.execute('CREATE INDEX idx_products_barcode ON products(barcode)');
     await db.execute(
       'CREATE INDEX idx_products_category ON products(category_id)',
@@ -582,9 +588,15 @@ class DatabaseHelper {
       'CREATE INDEX idx_stock_movements_date ON stock_movements(created_at)',
     );
 
-    // Sync Queue indexes
+    // Sync Queue indexes (updated for new schema)
     await db.execute(
-      'CREATE INDEX idx_sync_queue_status ON sync_queue(status)',
+      'CREATE INDEX idx_sync_queue_entity ON sync_queue(entityType)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_sync_queue_created ON sync_queue(createdAt)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_sync_queue_synced ON sync_queue(syncedAt)',
     );
   }
 
@@ -613,8 +625,75 @@ class DatabaseHelper {
 
   // ==================== UPGRADE HANDLER ====================
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // For future upgrades, implement migration logic here
-    // Currently starting fresh with version 1
+    // Migration from version 1 to 2: Remove UNIQUE constraint from barcode
+    if (oldVersion < 2) {
+      // SQLite doesn't support ALTER TABLE to drop constraints
+      // So we need to recreate the products table
+
+      // Step 1: Create temporary table with new schema
+      await db.execute('''
+        CREATE TABLE products_new (
+          id TEXT PRIMARY KEY,
+          sku TEXT UNIQUE NOT NULL,
+          barcode TEXT,
+          name TEXT NOT NULL,
+          description TEXT,
+          category_id TEXT,
+          unit TEXT DEFAULT 'PCS',
+          cost_price REAL DEFAULT 0,
+          selling_price REAL NOT NULL,
+          min_stock INTEGER DEFAULT 0,
+          max_stock INTEGER DEFAULT 0,
+          reorder_point INTEGER DEFAULT 0,
+          stock INTEGER NOT NULL DEFAULT 0,
+          is_active INTEGER DEFAULT 1,
+          is_trackable INTEGER DEFAULT 1,
+          image_url TEXT,
+          attributes TEXT DEFAULT '{}',
+          tax_rate REAL DEFAULT 0,
+          discount_percentage REAL DEFAULT 0,
+          branch_id TEXT,
+          sync_status TEXT DEFAULT 'SYNCED',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT
+        )
+      ''');
+
+      // Step 2: Copy data from old table (will fail if duplicate barcodes exist)
+      // Handle duplicate barcodes by setting them to NULL
+      await db.execute('''
+        INSERT INTO products_new 
+        SELECT id, sku, 
+               CASE 
+                 WHEN barcode IN (SELECT barcode FROM products GROUP BY barcode HAVING COUNT(*) > 1)
+                 THEN NULL 
+                 ELSE barcode 
+               END as barcode,
+               name, description, category_id, unit, cost_price, selling_price, 
+               min_stock, max_stock, reorder_point, stock, is_active, is_trackable, 
+               image_url, attributes, tax_rate, discount_percentage, branch_id, 
+               sync_status, created_at, updated_at, deleted_at
+        FROM products
+      ''');
+
+      // Step 3: Drop old table
+      await db.execute('DROP TABLE products');
+
+      // Step 4: Rename new table
+      await db.execute('ALTER TABLE products_new RENAME TO products');
+
+      // Step 5: Recreate indexes for products
+      await db.execute(
+        'CREATE INDEX idx_products_category ON products(category_id)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_products_barcode ON products(barcode)',
+      );
+      await db.execute(
+        'CREATE INDEX idx_products_active ON products(is_active)',
+      );
+    }
   }
 
   // ==================== HELPER METHODS ====================

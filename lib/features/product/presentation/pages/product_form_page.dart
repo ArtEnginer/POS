@@ -4,9 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
-// import hybrid_sync_manager; // DELETED
-// import online_only_guard; // DELETED
-// import connection_status_indicator; // DELETED
 import '../../../../injection_container.dart';
 import '../../domain/entities/product.dart';
 import '../bloc/product_bloc.dart';
@@ -25,10 +22,10 @@ class ProductFormPage extends StatefulWidget {
 class _ProductFormPageState extends State<ProductFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _barcodeController = TextEditingController();
-  final _pluController = TextEditingController();
+  final _skuController = TextEditingController();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _purchasePriceController = TextEditingController();
+  final _costPriceController = TextEditingController();
   final _sellingPriceController = TextEditingController();
   final _stockController = TextEditingController();
   final _minStockController = TextEditingController();
@@ -58,25 +55,25 @@ class _ProductFormPageState extends State<ProductFormPage> {
     if (widget.product != null) {
       _initializeFormWithProduct(widget.product!);
     } else {
-      // Auto-generate PLU for new product
-      _generatePLU();
+      // Auto-generate sku for new product
+      _generatesku();
     }
   }
 
-  void _generatePLU() {
-    // Generate PLU based on timestamp: PLU + current time in format YYMMDDHHmmss
+  void _generatesku() {
+    // Generate sku based on timestamp: sku + current time in format YYMMDDHHmmss
     final now = DateTime.now();
-    final plu =
-        'PLU${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-    _pluController.text = plu;
+    final sku =
+        'sku${now.year.toString().substring(2)}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    _skuController.text = sku;
   }
 
   void _initializeFormWithProduct(Product product) {
     _barcodeController.text = product.barcode;
-    _pluController.text = product.plu;
+    _skuController.text = product.sku;
     _nameController.text = product.name;
     _descriptionController.text = product.description ?? '';
-    _purchasePriceController.text = product.purchasePrice.toString();
+    _costPriceController.text = product.costPrice.toString();
     _sellingPriceController.text = product.sellingPrice.toString();
     _stockController.text = product.stock.toString();
     _minStockController.text = product.minStock.toString();
@@ -88,10 +85,10 @@ class _ProductFormPageState extends State<ProductFormPage> {
   void dispose() {
     _productBloc.close();
     _barcodeController.dispose();
-    _pluController.dispose();
+    _skuController.dispose();
     _nameController.dispose();
     _descriptionController.dispose();
-    _purchasePriceController.dispose();
+    _costPriceController.dispose();
     _sellingPriceController.dispose();
     _stockController.dispose();
     _minStockController.dispose();
@@ -200,7 +197,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
                         const SizedBox(height: 16),
                         Row(
                           children: [
-                            Expanded(child: _buildPurchasePriceField()),
+                            Expanded(child: _buildcostPriceField()),
                             const SizedBox(width: 16),
                             Expanded(child: _buildSellingPriceField()),
                           ],
@@ -350,9 +347,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
-  Widget _buildPurchasePriceField() {
+  Widget _buildcostPriceField() {
     return TextFormField(
-      controller: _purchasePriceController,
+      controller: _costPriceController,
       decoration: InputDecoration(
         labelText: 'Harga Beli *',
         hintText: '0',
@@ -398,8 +395,8 @@ class _ProductFormPageState extends State<ProductFormPage> {
         if (price == null || price <= 0) {
           return 'Harga jual tidak valid';
         }
-        final purchasePrice = double.tryParse(_purchasePriceController.text);
-        if (purchasePrice != null && price < purchasePrice) {
+        final costPrice = double.tryParse(_costPriceController.text);
+        if (costPrice != null && price < costPrice) {
           return 'Harga jual < harga beli';
         }
         return null;
@@ -411,12 +408,12 @@ class _ProductFormPageState extends State<ProductFormPage> {
   }
 
   Widget _buildProfitInfo() {
-    final purchasePrice = double.tryParse(_purchasePriceController.text) ?? 0;
+    final costPrice = double.tryParse(_costPriceController.text) ?? 0;
     final sellingPrice = double.tryParse(_sellingPriceController.text) ?? 0;
-    final profit = sellingPrice - purchasePrice;
-    final margin = purchasePrice > 0 ? (profit / purchasePrice * 100) : 0;
+    final profit = sellingPrice - costPrice;
+    final margin = costPrice > 0 ? (profit / costPrice * 100) : 0;
 
-    if (purchasePrice == 0 || sellingPrice == 0) {
+    if (costPrice == 0 || sellingPrice == 0) {
       return const SizedBox.shrink();
     }
 
@@ -561,14 +558,14 @@ class _ProductFormPageState extends State<ProductFormPage> {
       final product = Product(
         id: isEdit ? widget.product!.id : const Uuid().v4(),
         barcode: _barcodeController.text.trim(),
-        plu: _pluController.text.trim(),
+        sku: _skuController.text.trim(),
         name: _nameController.text.trim(),
         description:
             _descriptionController.text.trim().isEmpty
                 ? null
                 : _descriptionController.text.trim(),
         unit: _selectedUnit,
-        purchasePrice: double.parse(_purchasePriceController.text),
+        costPrice: double.parse(_costPriceController.text),
         sellingPrice: double.parse(_sellingPriceController.text),
         stock: int.parse(_stockController.text),
         minStock: int.parse(_minStockController.text),

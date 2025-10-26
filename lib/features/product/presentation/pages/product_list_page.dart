@@ -57,10 +57,10 @@ class _ProductListPageState extends State<ProductListPage> {
     final sorted = List<Product>.from(products);
 
     switch (_sortColumnIndex) {
-      case 0: // PLU
+      case 0: // sku
         sorted.sort(
           (a, b) =>
-              _sortAscending ? a.plu.compareTo(b.plu) : b.plu.compareTo(a.plu),
+              _sortAscending ? a.sku.compareTo(b.sku) : b.sku.compareTo(a.sku),
         );
         break;
       case 1: // Barcode
@@ -92,8 +92,8 @@ class _ProductListPageState extends State<ProductListPage> {
         sorted.sort(
           (a, b) =>
               _sortAscending
-                  ? a.purchasePrice.compareTo(b.purchasePrice)
-                  : b.purchasePrice.compareTo(a.purchasePrice),
+                  ? a.costPrice.compareTo(b.costPrice)
+                  : b.costPrice.compareTo(a.costPrice),
         );
         break;
       case 5: // Harga Jual
@@ -361,14 +361,14 @@ class _ProductListPageState extends State<ProductListPage> {
                   columns: [
                     DataColumn(
                       label: const Text(
-                        'PLU',
+                        'sku',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
                         ),
                       ),
                       onSort: (columnIndex, ascending) {
-                        _sort<String>((p) => p.plu, columnIndex, ascending);
+                        _sort<String>((p) => p.sku, columnIndex, ascending);
                       },
                     ),
                     DataColumn(
@@ -421,11 +421,7 @@ class _ProductListPageState extends State<ProductListPage> {
                       ),
                       numeric: true,
                       onSort: (columnIndex, ascending) {
-                        _sort<num>(
-                          (p) => p.purchasePrice,
-                          columnIndex,
-                          ascending,
-                        );
+                        _sort<num>((p) => p.costPrice, columnIndex, ascending);
                       },
                     ),
                     DataColumn(
@@ -504,7 +500,7 @@ class _ProductListPageState extends State<ProductListPage> {
                           cells: [
                             DataCell(
                               Text(
-                                product.plu,
+                                product.sku,
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   fontSize: 13,
                                 ),
@@ -549,7 +545,7 @@ class _ProductListPageState extends State<ProductListPage> {
                             ),
                             DataCell(
                               Text(
-                                'Rp ${product.purchasePrice.toStringAsFixed(0)}',
+                                'Rp ${product.costPrice.toStringAsFixed(0)}',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   fontSize: 13,
                                 ),

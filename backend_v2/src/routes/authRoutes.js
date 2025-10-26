@@ -50,12 +50,49 @@ router.post(
       throw new UnauthorizedError("Invalid credentials");
     }
 
-    // Generate tokens
+    // Get user's branches
+    const branchesResult = await db.query(
+      `SELECT ub.branch_id, ub.is_default, b.code, b.name, b.api_key
+       FROM user_branches ub
+       JOIN branches b ON b.id = ub.branch_id
+       WHERE ub.user_id = $1 AND b.is_active = true AND b.deleted_at IS NULL
+       ORDER BY ub.is_default DESC, b.name ASC`,
+      [user.id]
+    );
+
+    const userBranches = branchesResult.rows;
+
+    // Get default branch or first available branch
+    let defaultBranch =
+      userBranches.find((b) => b.is_default) || userBranches[0];
+
+    // If no branches assigned, super_admin gets access to all branches
+    if (!defaultBranch && user.role === "super_admin") {
+      const allBranchesResult = await db.query(
+        `SELECT id as branch_id, code, name, api_key, true as is_default
+         FROM branches 
+         WHERE is_active = true AND deleted_at IS NULL
+         ORDER BY is_head_office DESC, name ASC
+         LIMIT 1`
+      );
+
+      if (allBranchesResult.rows.length > 0) {
+        defaultBranch = allBranchesResult.rows[0];
+      }
+    }
+
+    if (!defaultBranch) {
+      throw new UnauthorizedError("No branch assigned to user");
+    }
+
+    // Generate tokens with branch info
     const accessToken = jwt.sign(
       {
         id: user.id,
         username: user.username,
         role: user.role,
+        branchId: defaultBranch.branch_id.toString(),
+        branches: userBranches.map((b) => b.branch_id),
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_ACCESS_EXPIRATION || "15m" }
@@ -69,6 +106,13 @@ router.post(
 
     // Store refresh token in Redis
     await cache.set(`refresh_token:${user.id}`, refreshToken, 7 * 24 * 60 * 60);
+
+    // Cache API key for branch authentication
+    await cache.set(
+      `apikey:${defaultBranch.api_key}`,
+      defaultBranch.branch_id.toString(),
+      7 * 24 * 60 * 60
+    );
 
     // Update last login
     await db.query(
@@ -84,6 +128,18 @@ router.post(
         email: user.email,
         fullName: user.full_name,
         role: user.role,
+        branchId: defaultBranch.branch_id.toString(),
+        branches: userBranches.map((b) => ({
+          id: b.branch_id,
+          code: b.code,
+          name: b.name,
+          isDefault: b.is_default,
+        })),
+      },
+      branch: {
+        id: defaultBranch.branch_id.toString(),
+        code: defaultBranch.code,
+        name: defaultBranch.name,
       },
       tokens: {
         accessToken,
@@ -128,12 +184,26 @@ router.post(
 
     const user = result.rows[0];
 
+    // Get user's branches for token
+    const branchesResult = await db.query(
+      `SELECT ub.branch_id, ub.is_default
+       FROM user_branches ub
+       WHERE ub.user_id = $1`,
+      [user.id]
+    );
+
+    const userBranches = branchesResult.rows;
+    const defaultBranch =
+      userBranches.find((b) => b.is_default) || userBranches[0];
+
     // Generate new access token
     const accessToken = jwt.sign(
       {
         id: user.id,
         username: user.username,
         role: user.role,
+        branchId: defaultBranch ? defaultBranch.branch_id.toString() : null,
+        branches: userBranches.map((b) => b.branch_id),
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_ACCESS_EXPIRATION || "15m" }
@@ -141,7 +211,10 @@ router.post(
 
     res.json({
       success: true,
-      accessToken,
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
     });
   })
 );
@@ -187,6 +260,114 @@ router.post(
   asyncHandler(async (req, res) => {
     // TODO: Implement password change
     res.json({ message: "Change password" });
+  })
+);
+
+/**
+ * @route   POST /api/v2/auth/switch-branch
+ * @desc    Switch user's active branch
+ * @access  Private
+ */
+router.post(
+  "/switch-branch",
+  asyncHandler(async (req, res) => {
+    const { branchId } = req.body;
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+      throw new UnauthorizedError("Access token required");
+    }
+
+    if (!branchId) {
+      throw new ValidationError("Branch ID required");
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check if user has access to this branch
+    const accessResult = await db.query(
+      `SELECT ub.id, b.code, b.name, b.api_key
+       FROM user_branches ub
+       JOIN branches b ON b.id = ub.branch_id
+       WHERE ub.user_id = $1 AND ub.branch_id = $2 AND b.is_active = true`,
+      [decoded.id, parseInt(branchId)]
+    );
+
+    if (accessResult.rows.length === 0 && decoded.role !== "super_admin") {
+      throw new ForbiddenError("No access to this branch");
+    }
+
+    // If super admin and no access, allow anyway
+    let branch;
+    if (accessResult.rows.length > 0) {
+      branch = accessResult.rows[0];
+    } else {
+      // Get branch for super admin
+      const branchResult = await db.query(
+        "SELECT id, code, name, api_key FROM branches WHERE id = $1 AND is_active = true",
+        [parseInt(branchId)]
+      );
+
+      if (branchResult.rows.length === 0) {
+        throw new ValidationError("Branch not found");
+      }
+
+      branch = branchResult.rows[0];
+    }
+
+    // Get all user branches for token
+    const branchesResult = await db.query(
+      `SELECT branch_id FROM user_branches WHERE user_id = $1`,
+      [decoded.id]
+    );
+
+    // Generate new tokens with new branch
+    const accessToken = jwt.sign(
+      {
+        id: decoded.id,
+        username: decoded.username,
+        role: decoded.role,
+        branchId: branchId.toString(),
+        branches: branchesResult.rows.map((b) => b.branch_id),
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_ACCESS_EXPIRATION || "15m" }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: decoded.id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: process.env.JWT_REFRESH_EXPIRATION || "7d" }
+    );
+
+    // Store new refresh token
+    await cache.set(
+      `refresh_token:${decoded.id}`,
+      refreshToken,
+      7 * 24 * 60 * 60
+    );
+
+    // Cache API key
+    await cache.set(
+      `apikey:${branch.api_key}`,
+      branchId.toString(),
+      7 * 24 * 60 * 60
+    );
+
+    res.json({
+      success: true,
+      branch: {
+        id: branchId.toString(),
+        code: branch.code,
+        name: branch.name,
+      },
+      tokens: {
+        accessToken,
+        refreshToken,
+      },
+    });
   })
 );
 

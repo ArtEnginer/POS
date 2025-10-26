@@ -1,5 +1,3 @@
-import '../../../../core/database/database_helper.dart';
-// import hybrid_sync_manager; // DELETED
 import '../../../../core/error/exceptions.dart' as app_exceptions;
 import '../../../../core/socket/socket_service.dart';
 import '../../../../core/auth/auth_service.dart';
@@ -30,13 +28,14 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
   @override
   Future<List<ProductModel>> getAllProducts({String? branchId}) async {
     try {
-      final currentBranchId =
-          branchId ?? await authService.getCurrentBranchId();
-
+      // MANAGEMENT: Get ALL products regardless of branch
+      // Don't filter by branchId for management features
+      // Stock filtering should only apply to POS transactions
       final response = await apiClient.get(
         '/products',
         queryParameters: {
-          if (currentBranchId != null) 'branchId': currentBranchId,
+          'limit': 1000, // Get all products, not just paginated
+          // Don't send branchId - we want all products for management
         },
       );
 
