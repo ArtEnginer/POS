@@ -1,47 +1,36 @@
 import express from "express";
-import { asyncHandler } from "../middleware/errorHandler.js";
 import { authenticateToken } from "../middleware/auth.js";
+import {
+  getAllSuppliers,
+  getSupplierById,
+  searchSuppliers,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  generateSupplierCode,
+} from "../controllers/supplierController.js";
 
 const router = express.Router();
 
-router.get(
-  "/",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Get all suppliers" });
-  })
-);
+// Generate supplier code
+router.get("/generate-code", authenticateToken, generateSupplierCode);
 
-router.get(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Get supplier by ID" });
-  })
-);
+// Search suppliers
+router.get("/search", authenticateToken, searchSuppliers);
 
-router.post(
-  "/",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Create supplier" });
-  })
-);
+// Get all suppliers
+router.get("/", authenticateToken, getAllSuppliers);
 
-router.put(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Update supplier" });
-  })
-);
+// Get supplier by ID
+router.get("/:id", authenticateToken, getSupplierById);
 
-router.delete(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Delete supplier" });
-  })
-);
+// Create supplier
+router.post("/", authenticateToken, createSupplier);
+
+// Update supplier
+router.put("/:id", authenticateToken, updateSupplier);
+
+// Delete supplier
+router.delete("/:id", authenticateToken, deleteSupplier);
 
 export default router;

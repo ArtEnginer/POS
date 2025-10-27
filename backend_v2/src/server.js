@@ -239,7 +239,11 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  logger.error("Unhandled Rejection at:", promise, "reason:", reason);
+  logger.error("Unhandled Rejection at:", promise);
+  logger.error("Rejection reason:", JSON.stringify(reason, null, 2));
+  if (reason && reason.stack) {
+    logger.error("Stack trace:", reason.stack);
+  }
   gracefulShutdown("unhandledRejection");
 });
 

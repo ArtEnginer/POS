@@ -6,6 +6,18 @@ import * as productController from "../controllers/productController.js";
 const router = express.Router();
 
 /**
+ * @route   DELETE /api/v2/products/cache/clear
+ * @desc    Clear product cache (all or specific product)
+ * @access  Private (Admin)
+ */
+router.delete(
+  "/cache/clear/:productId?",
+  authenticateToken,
+  authorize("super_admin", "admin"),
+  asyncHandler(productController.clearProductCache)
+);
+
+/**
  * @route   GET /api/v2/products
  * @desc    Get all products with pagination and filters
  * @access  Private

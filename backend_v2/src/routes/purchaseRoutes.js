@@ -1,49 +1,40 @@
 import express from "express";
-import { asyncHandler } from "../middleware/errorHandler.js";
 import { authenticateToken } from "../middleware/auth.js";
+import {
+  getAllPurchases,
+  getPurchaseById,
+  searchPurchases,
+  createPurchase,
+  updatePurchase,
+  deletePurchase,
+  generatePurchaseNumber,
+  updatePurchaseStatus,
+} from "../controllers/purchaseController.js";
 
 const router = express.Router();
 
-// Placeholder routes - implement controllers sesuai kebutuhan
+// Generate purchase number
+router.get("/generate-number", authenticateToken, generatePurchaseNumber);
 
-router.get(
-  "/",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Get all purchases" });
-  })
-);
+// Search purchases
+router.get("/search", authenticateToken, searchPurchases);
 
-router.get(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Get purchase by ID" });
-  })
-);
+// Get all purchases
+router.get("/", authenticateToken, getAllPurchases);
 
-router.post(
-  "/",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Create purchase" });
-  })
-);
+// Get purchase by ID
+router.get("/:id", authenticateToken, getPurchaseById);
 
-router.put(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Update purchase" });
-  })
-);
+// Create purchase
+router.post("/", authenticateToken, createPurchase);
 
-router.delete(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Delete purchase" });
-  })
-);
+// Update purchase
+router.put("/:id", authenticateToken, updatePurchase);
+
+// Update purchase status
+router.patch("/:id/status", authenticateToken, updatePurchaseStatus);
+
+// Delete purchase
+router.delete("/:id", authenticateToken, deletePurchase);
 
 export default router;

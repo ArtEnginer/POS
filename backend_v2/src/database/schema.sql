@@ -276,7 +276,7 @@ CREATE INDEX idx_sale_items_product ON sale_items(product_id);
 -- 7. PURCHASE TRANSACTIONS
 -- ============================================
 
-CREATE TYPE purchase_status AS ENUM ('draft', 'ordered', 'received', 'partial', 'cancelled');
+CREATE TYPE purchase_status AS ENUM ('draft', 'ordered', 'approved', 'partial', 'received', 'cancelled');
 
 CREATE TABLE purchases (
     id BIGSERIAL PRIMARY KEY,

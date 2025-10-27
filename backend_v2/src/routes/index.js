@@ -2,8 +2,10 @@ import express from "express";
 
 // Import route modules
 import productRoutes from "./productRoutes.js";
+import categoryRoutes from "./categoryRoutes.js";
 import saleRoutes from "./saleRoutes.js";
 import purchaseRoutes from "./purchaseRoutes.js";
+import receivingRoutes from "./receivingRoutes.js";
 import customerRoutes from "./customerRoutes.js";
 import supplierRoutes from "./supplierRoutes.js";
 import branchRoutes from "./branchRoutes.js";
@@ -25,10 +27,12 @@ router.get("/", (req, res) => {
       users: "/users",
       branches: "/branches",
       products: "/products",
+      categories: "/categories",
       customers: "/customers",
       suppliers: "/suppliers",
       sales: "/sales",
       purchases: "/purchases",
+      receivings: "/receivings",
       sync: "/sync",
       reports: "/reports",
     },
@@ -40,10 +44,12 @@ router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
 router.use("/branches", branchRoutes);
 router.use("/products", productRoutes);
+router.use("/categories", categoryRoutes);
 router.use("/customers", customerRoutes);
 router.use("/suppliers", supplierRoutes);
 router.use("/sales", saleRoutes);
 router.use("/purchases", purchaseRoutes);
+router.use("/receivings", receivingRoutes);
 router.use("/sync", syncRoutes);
 router.use("/reports", reportRoutes);
 
