@@ -88,7 +88,7 @@ class UpdateProductStock {
 
   UpdateProductStock(this.repository);
 
-  Future<Either<Failure, void>> call(String id, int quantity) async {
+  Future<Either<Failure, void>> call(String id, double quantity) async {
     return await repository.updateStock(id, quantity);
   }
 }

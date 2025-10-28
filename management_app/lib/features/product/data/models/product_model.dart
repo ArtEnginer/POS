@@ -60,10 +60,9 @@ class ProductModel extends Product {
       unit: json['unit'] as String? ?? 'PCS',
       costPrice: _parseDouble(json['cost_price']) ?? 0.0,
       sellingPrice: _parseDouble(json['selling_price']) ?? 0.0,
-      // Support both old 'stock' and new 'stock_quantity' from backend
-      stock: _parseInt(json['stock_quantity'] ?? json['stock']) ?? 0,
-      minStock: _parseInt(json['min_stock']) ?? 0,
-      maxStock: _parseInt(json['max_stock']) ?? 0,
+      stock: _parseDouble(json['stock_quantity'] ?? json['stock']) ?? 0.0,
+      minStock: _parseDouble(json['min_stock']) ?? 0.0,
+      maxStock: _parseDouble(json['max_stock']) ?? 0.0,
       reorderPoint: _parseInt(json['reorder_point']) ?? 0,
       imageUrl: json['image_url'] as String?,
       isActive: json['is_active'] == 1 || json['is_active'] == true,

@@ -81,7 +81,7 @@ class DeleteProduct extends ProductEvent {
 
 class UpdateProductStock extends ProductEvent {
   final String id;
-  final int quantity;
+  final double quantity;
 
   const UpdateProductStock(this.id, this.quantity);
 

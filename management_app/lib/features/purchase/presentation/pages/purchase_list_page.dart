@@ -304,13 +304,15 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
                             onPressed: () => _viewDetail(purchase),
                             tooltip: 'Lihat Detail',
                           ),
-                          if (purchase.status == 'DRAFT')
+                          // Edit button - only for draft, ordered, partial
+                          if (_canEditPurchase(purchase.status))
                             IconButton(
                               icon: const Icon(Icons.edit, size: 20),
                               onPressed: () => _editPurchase(purchase),
                               tooltip: 'Edit',
                             ),
-                          if (purchase.status == 'DRAFT')
+                          // Delete button - only for draft, ordered, partial
+                          if (_canDeletePurchase(purchase.status))
                             IconButton(
                               icon: const Icon(
                                 Icons.delete,
@@ -469,5 +471,19 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
             ],
           ),
     );
+  }
+
+  /// Check if purchase can be edited
+  /// Only purchases with status: draft, ordered, partial can be edited
+  bool _canEditPurchase(String status) {
+    final lowerStatus = status.toLowerCase();
+    return ['draft', 'ordered', 'partial'].contains(lowerStatus);
+  }
+
+  /// Check if purchase can be deleted
+  /// Only purchases with status: draft, ordered, partial can be deleted
+  bool _canDeletePurchase(String status) {
+    final lowerStatus = status.toLowerCase();
+    return ['draft', 'ordered', 'partial'].contains(lowerStatus);
   }
 }

@@ -1,15 +1,70 @@
 -- ============================================
--- POS ENTERPRISE DATABASE SCHEMA
+-- POS ENTERPRISE DATABASE SCHEMA - COMPLETE
 -- PostgreSQL 16+
 -- Multi-Branch Support
+-- DENGAN QUANTITY SUPPORT DECIMAL (Mendukung pecahan: 1.5, 2.75, dll)
+-- ============================================
+-- Version: 2.0
+-- Last Updated: 28 Oktober 2025
 -- ============================================
 
--- Enable required extensions
+-- ============================================
+-- STEP 1: DROP EXISTING DATABASE (OPTIONAL - HATI-HATI!)
+-- ============================================
+-- Uncomment baris di bawah jika ingin reset total
+-- DROP DATABASE IF EXISTS pos_enterprise;
+-- CREATE DATABASE pos_enterprise;
+
+-- ============================================
+-- STEP 2: ENABLE EXTENSIONS
+-- ============================================
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm"; -- For fuzzy text search
 
 -- ============================================
--- 1. BRANCH MANAGEMENT
+-- STEP 3: DROP ALL EXISTING TABLES & TYPES (Clean Start)
+-- ============================================
+
+-- Drop tables in reverse order (child tables first)
+DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS sync_logs CASCADE;
+DROP TABLE IF EXISTS stock_adjustments CASCADE;
+DROP TABLE IF EXISTS purchase_return_items CASCADE;
+DROP TABLE IF EXISTS purchase_returns CASCADE;
+DROP TABLE IF EXISTS receiving_items CASCADE;
+DROP TABLE IF EXISTS receivings CASCADE;
+DROP TABLE IF EXISTS purchase_items CASCADE;
+DROP TABLE IF EXISTS purchases CASCADE;
+DROP TABLE IF EXISTS sale_items CASCADE;
+DROP TABLE IF EXISTS sales CASCADE;
+DROP TABLE IF EXISTS product_stocks CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS suppliers CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS user_branches CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS branches CASCADE;
+
+-- Drop custom types
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS user_status CASCADE;
+DROP TYPE IF EXISTS customer_type CASCADE;
+DROP TYPE IF EXISTS sale_status CASCADE;
+DROP TYPE IF EXISTS payment_method CASCADE;
+DROP TYPE IF EXISTS purchase_status CASCADE;
+DROP TYPE IF EXISTS receiving_status CASCADE;
+DROP TYPE IF EXISTS adjustment_type CASCADE;
+DROP TYPE IF EXISTS sync_operation CASCADE;
+DROP TYPE IF EXISTS sync_entity_type CASCADE;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS update_stock_on_sale() CASCADE;
+
+-- ============================================
+-- SECTION 1: BRANCH MANAGEMENT
 -- ============================================
 
 CREATE TABLE branches (
@@ -35,7 +90,7 @@ CREATE INDEX idx_branches_active ON branches(is_active);
 CREATE INDEX idx_branches_api_key ON branches(api_key);
 
 -- ============================================
--- 2. USER MANAGEMENT
+-- SECTION 2: USER MANAGEMENT
 -- ============================================
 
 CREATE TYPE user_role AS ENUM ('super_admin', 'admin', 'manager', 'cashier', 'staff');
@@ -77,7 +132,7 @@ CREATE INDEX idx_user_branches_user ON user_branches(user_id);
 CREATE INDEX idx_user_branches_branch ON user_branches(branch_id);
 
 -- ============================================
--- 3. PRODUCT MANAGEMENT
+-- SECTION 3: PRODUCT MANAGEMENT
 -- ============================================
 
 CREATE TABLE categories (
@@ -106,9 +161,9 @@ CREATE TABLE products (
     unit VARCHAR(50) DEFAULT 'PCS',
     cost_price DECIMAL(15, 2) DEFAULT 0,
     selling_price DECIMAL(15, 2) NOT NULL,
-    min_stock INTEGER DEFAULT 0,
-    max_stock INTEGER DEFAULT 0,
-    reorder_point INTEGER DEFAULT 0,
+    min_stock DECIMAL(15, 3) DEFAULT 0,
+    max_stock DECIMAL(15, 3) DEFAULT 0,
+    reorder_point DECIMAL(15, 3) DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
     is_trackable BOOLEAN DEFAULT true,
     image_url TEXT,
@@ -126,7 +181,7 @@ CREATE INDEX idx_products_name ON products USING gin (name gin_trgm_ops);
 CREATE INDEX idx_products_category ON products(category_id);
 CREATE INDEX idx_products_active ON products(is_active);
 
--- Product stock per branch
+-- Product stock per branch (DENGAN DECIMAL UNTUK QUANTITY)
 CREATE TABLE product_stocks (
     id SERIAL PRIMARY KEY,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -144,7 +199,7 @@ CREATE INDEX idx_product_stocks_branch ON product_stocks(branch_id);
 CREATE INDEX idx_product_stocks_available ON product_stocks(available_quantity);
 
 -- ============================================
--- 4. CUSTOMER MANAGEMENT
+-- SECTION 4: CUSTOMER MANAGEMENT
 -- ============================================
 
 CREATE TYPE customer_type AS ENUM ('regular', 'vip', 'wholesale', 'retail');
@@ -177,7 +232,7 @@ CREATE INDEX idx_customers_type ON customers(customer_type);
 CREATE INDEX idx_customers_active ON customers(is_active);
 
 -- ============================================
--- 5. SUPPLIER MANAGEMENT
+-- SECTION 5: SUPPLIER MANAGEMENT
 -- ============================================
 
 CREATE TABLE suppliers (
@@ -204,7 +259,7 @@ CREATE INDEX idx_suppliers_name ON suppliers USING gin (name gin_trgm_ops);
 CREATE INDEX idx_suppliers_active ON suppliers(is_active);
 
 -- ============================================
--- 6. SALES TRANSACTIONS
+-- SECTION 6: SALES TRANSACTIONS
 -- ============================================
 
 CREATE TYPE sale_status AS ENUM ('pending', 'completed', 'cancelled', 'refunded');
@@ -249,9 +304,6 @@ CREATE INDEX idx_sales_date ON sales(sale_date);
 CREATE INDEX idx_sales_status ON sales(status);
 CREATE INDEX idx_sales_sync ON sales(sync_status);
 
--- Partitioning for large scale (optional)
--- CREATE TABLE sales_2025 PARTITION OF sales FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
-
 CREATE TABLE sale_items (
     id BIGSERIAL PRIMARY KEY,
     sale_id BIGINT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
@@ -273,7 +325,7 @@ CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX idx_sale_items_product ON sale_items(product_id);
 
 -- ============================================
--- 7. PURCHASE TRANSACTIONS
+-- SECTION 7: PURCHASE TRANSACTIONS
 -- ============================================
 
 CREATE TYPE purchase_status AS ENUM ('draft', 'ordered', 'approved', 'partial', 'received', 'cancelled');
@@ -336,7 +388,148 @@ CREATE INDEX idx_purchase_items_purchase ON purchase_items(purchase_id);
 CREATE INDEX idx_purchase_items_product ON purchase_items(product_id);
 
 -- ============================================
--- 8. INVENTORY ADJUSTMENTS
+-- SECTION 8: RECEIVING (PENERIMAAN BARANG)
+-- ============================================
+
+CREATE TYPE receiving_status AS ENUM ('completed', 'partial', 'cancelled');
+
+CREATE TABLE receivings (
+    id BIGSERIAL PRIMARY KEY,
+    receiving_number VARCHAR(50) UNIQUE NOT NULL,
+    purchase_id BIGINT NOT NULL REFERENCES purchases(id),
+    purchase_number VARCHAR(50) NOT NULL,
+    supplier_id INTEGER REFERENCES suppliers(id),
+    supplier_name VARCHAR(255),
+    receiving_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Delivery Information
+    invoice_number VARCHAR(100),
+    delivery_order_number VARCHAR(100),
+    vehicle_number VARCHAR(50),
+    driver_name VARCHAR(255),
+    
+    -- Financial Summary
+    subtotal DECIMAL(15, 2) NOT NULL,
+    item_discount DECIMAL(15, 2) DEFAULT 0,
+    item_tax DECIMAL(15, 2) DEFAULT 0,
+    total_discount DECIMAL(15, 2) DEFAULT 0,
+    total_tax DECIMAL(15, 2) DEFAULT 0,
+    total DECIMAL(15, 2) NOT NULL,
+    
+    status receiving_status DEFAULT 'completed',
+    notes TEXT,
+    received_by INTEGER REFERENCES users(id),
+    
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+    synced_at TIMESTAMP,
+    sync_status VARCHAR(20) DEFAULT 'pending',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL
+);
+
+CREATE INDEX idx_receivings_number ON receivings(receiving_number);
+CREATE INDEX idx_receivings_purchase ON receivings(purchase_id);
+CREATE INDEX idx_receivings_supplier ON receivings(supplier_id);
+CREATE INDEX idx_receivings_date ON receivings(receiving_date);
+CREATE INDEX idx_receivings_status ON receivings(status);
+
+CREATE TABLE receiving_items (
+    id BIGSERIAL PRIMARY KEY,
+    receiving_id BIGINT NOT NULL REFERENCES receivings(id) ON DELETE CASCADE,
+    purchase_item_id BIGINT REFERENCES purchase_items(id),
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_name VARCHAR(255) NOT NULL,
+    
+    -- PO Reference
+    po_quantity DECIMAL(15, 3) DEFAULT 0,
+    po_price DECIMAL(15, 2) DEFAULT 0,
+    
+    -- Received Data
+    received_quantity DECIMAL(15, 3) NOT NULL,
+    received_price DECIMAL(15, 2) NOT NULL,
+    
+    -- Discount & Tax per item
+    discount DECIMAL(15, 2) DEFAULT 0,
+    discount_type VARCHAR(20) DEFAULT 'AMOUNT', -- AMOUNT or PERCENTAGE
+    tax DECIMAL(15, 2) DEFAULT 0,
+    tax_type VARCHAR(20) DEFAULT 'AMOUNT', -- AMOUNT or PERCENTAGE
+    
+    subtotal DECIMAL(15, 2) NOT NULL,
+    total DECIMAL(15, 2) NOT NULL,
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_receiving_items_receiving ON receiving_items(receiving_id);
+CREATE INDEX idx_receiving_items_product ON receiving_items(product_id);
+
+-- ============================================
+-- SECTION 9: PURCHASE RETURNS
+-- ============================================
+
+CREATE TABLE purchase_returns (
+    id BIGSERIAL PRIMARY KEY,
+    return_number VARCHAR(50) UNIQUE NOT NULL,
+    receiving_id BIGINT NOT NULL REFERENCES receivings(id),
+    purchase_id BIGINT NOT NULL REFERENCES purchases(id),
+    supplier_id INTEGER REFERENCES suppliers(id),
+    return_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    subtotal DECIMAL(15, 2) NOT NULL,
+    total_discount DECIMAL(15, 2) DEFAULT 0,
+    total_tax DECIMAL(15, 2) DEFAULT 0,
+    total DECIMAL(15, 2) NOT NULL,
+    
+    reason TEXT,
+    notes TEXT,
+    returned_by INTEGER REFERENCES users(id),
+    
+    metadata JSONB DEFAULT '{}',
+    synced_at TIMESTAMP,
+    sync_status VARCHAR(20) DEFAULT 'pending',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_purchase_returns_number ON purchase_returns(return_number);
+CREATE INDEX idx_purchase_returns_receiving ON purchase_returns(receiving_id);
+CREATE INDEX idx_purchase_returns_purchase ON purchase_returns(purchase_id);
+CREATE INDEX idx_purchase_returns_supplier ON purchase_returns(supplier_id);
+
+CREATE TABLE purchase_return_items (
+    id BIGSERIAL PRIMARY KEY,
+    return_id BIGINT NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+    receiving_item_id BIGINT NOT NULL REFERENCES receiving_items(id),
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_name VARCHAR(255) NOT NULL,
+    
+    received_quantity DECIMAL(15, 3) NOT NULL,
+    return_quantity DECIMAL(15, 3) NOT NULL,
+    price DECIMAL(15, 2) NOT NULL,
+    
+    discount DECIMAL(15, 2) DEFAULT 0,
+    discount_type VARCHAR(20) DEFAULT 'AMOUNT',
+    tax DECIMAL(15, 2) DEFAULT 0,
+    tax_type VARCHAR(20) DEFAULT 'AMOUNT',
+    
+    subtotal DECIMAL(15, 2) NOT NULL,
+    total DECIMAL(15, 2) NOT NULL,
+    reason TEXT,
+    notes TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_purchase_return_items_return ON purchase_return_items(return_id);
+CREATE INDEX idx_purchase_return_items_product ON purchase_return_items(product_id);
+
+-- ============================================
+-- SECTION 10: INVENTORY ADJUSTMENTS
 -- ============================================
 
 CREATE TYPE adjustment_type AS ENUM ('increase', 'decrease', 'transfer', 'damage', 'lost', 'found');
@@ -363,7 +556,7 @@ CREATE INDEX idx_stock_adjustments_product ON stock_adjustments(product_id);
 CREATE INDEX idx_stock_adjustments_date ON stock_adjustments(adjustment_date);
 
 -- ============================================
--- 9. SYNC LOG (untuk tracking data sync)
+-- SECTION 11: SYNC LOG
 -- ============================================
 
 CREATE TYPE sync_operation AS ENUM ('create', 'update', 'delete');
@@ -389,7 +582,7 @@ CREATE INDEX idx_sync_logs_status ON sync_logs(sync_status);
 CREATE INDEX idx_sync_logs_date ON sync_logs(created_at);
 
 -- ============================================
--- 10. AUDIT LOG
+-- SECTION 12: AUDIT LOG
 -- ============================================
 
 CREATE TABLE audit_logs (
@@ -412,7 +605,7 @@ CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_logs_date ON audit_logs(created_at);
 
 -- ============================================
--- FUNCTIONS & TRIGGERS
+-- SECTION 13: FUNCTIONS & TRIGGERS
 -- ============================================
 
 -- Update timestamp function
@@ -432,6 +625,7 @@ CREATE TRIGGER update_customers_timestamp BEFORE UPDATE ON customers FOR EACH RO
 CREATE TRIGGER update_suppliers_timestamp BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_sales_timestamp BEFORE UPDATE ON sales FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_purchases_timestamp BEFORE UPDATE ON purchases FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_receivings_timestamp BEFORE UPDATE ON receivings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- Auto-update product stock when sale is created
 CREATE OR REPLACE FUNCTION update_stock_on_sale()
@@ -440,7 +634,7 @@ BEGIN
     IF NEW.status = 'completed' THEN
         UPDATE product_stocks
         SET quantity = quantity - (
-            SELECT SUM(quantity)
+            SELECT COALESCE(SUM(quantity), 0)
             FROM sale_items
             WHERE sale_id = NEW.id AND product_id = product_stocks.product_id
         )
@@ -457,20 +651,38 @@ FOR EACH ROW
 EXECUTE FUNCTION update_stock_on_sale();
 
 -- ============================================
--- INITIAL DATA
+-- SECTION 14: INITIAL DATA
 -- ============================================
 
 -- Default super admin user (password: admin123)
 INSERT INTO users (username, email, password_hash, full_name, role, status)
-VALUES ('admin', 'admin@pos.com', '$2a$10$rG7QVqvN8z3V.gFZ8yQrB.vH9p7zLVXQx6F7ij9jZJU9YW7KJt5.a', 'System Administrator', 'super_admin', 'active');
+VALUES ('admin', 'admin@pos.com', '$2a$10$rG7QVqvN8z3V.gFZ8yQrB.vH9p7zLVXQx6F7ij9jZJU9YW7KJt5.a', 'System Administrator', 'super_admin', 'active')
+ON CONFLICT (username) DO NOTHING;
 
 -- Default head office branch
 INSERT INTO branches (code, name, is_head_office, api_key)
-VALUES ('HQ', 'Head Office', true, uuid_generate_v4()::text);
+VALUES ('HQ', 'Head Office', true, uuid_generate_v4()::text)
+ON CONFLICT (code) DO NOTHING;
 
 -- Default category
 INSERT INTO categories (name, description)
-VALUES ('General', 'General products');
+VALUES ('General', 'General products')
+ON CONFLICT DO NOTHING;
 
--- Success message
-SELECT 'Database schema created successfully!' as message;
+-- Assign admin to head office
+INSERT INTO user_branches (user_id, branch_id, is_default)
+SELECT u.id, b.id, true
+FROM users u, branches b
+WHERE u.username = 'admin' AND b.code = 'HQ'
+ON CONFLICT (user_id, branch_id) DO NOTHING;
+
+-- ============================================
+-- COMPLETE! DATABASE READY TO USE
+-- ============================================
+
+SELECT '✅ Database schema created successfully!' as status;
+SELECT '✅ QUANTITY Support: DECIMAL(15, 3) - Mendukung pecahan (1.5, 2.75, dll)' as feature;
+SELECT 'Username: admin | Password: admin123' as credentials;
+SELECT 'Total Tables: ' || COUNT(*) || ' tables created' as summary
+FROM information_schema.tables 
+WHERE table_schema = 'public' AND table_type = 'BASE TABLE';

@@ -222,11 +222,44 @@ export const getProductById = async (req, res) => {
  */
 export const getProductByBarcode = async (req, res) => {
   const { barcode } = req.params;
+  const { branchId } = req.query;
 
   const result = await db.query(
-    `SELECT p.*, c.name as category_name
+    `SELECT p.*, c.name as category_name,
+            COALESCE(stock_agg.total_quantity, 0) as stock_quantity,
+            COALESCE(stock_agg.total_available, 0) as available_quantity,
+            stock_agg.branch_stocks
      FROM products p
      LEFT JOIN categories c ON p.category_id = c.id
+     LEFT JOIN (
+       SELECT 
+         product_id,
+         ${
+           branchId
+             ? `MAX(CASE WHEN branch_id = ${parseInt(
+                 branchId
+               )} THEN quantity ELSE 0 END)`
+             : "SUM(quantity)"
+         } as total_quantity,
+         ${
+           branchId
+             ? `MAX(CASE WHEN branch_id = ${parseInt(
+                 branchId
+               )} THEN available_quantity ELSE 0 END)`
+             : "SUM(available_quantity)"
+         } as total_available,
+         jsonb_agg(
+           jsonb_build_object(
+             'branchId', branch_id,
+             'quantity', quantity,
+             'reservedQuantity', reserved_quantity,
+             'availableQuantity', available_quantity
+           )
+         ) as branch_stocks
+       FROM product_stocks
+       ${branchId ? `WHERE branch_id = ${parseInt(branchId)}` : ""}
+       GROUP BY product_id
+     ) stock_agg ON p.id = stock_agg.product_id
      WHERE p.barcode = $1 AND p.deleted_at IS NULL`,
     [barcode]
   );
@@ -245,18 +278,50 @@ export const getProductByBarcode = async (req, res) => {
  * Search products
  */
 export const searchProducts = async (req, res) => {
-  const { q, limit = 10 } = req.query;
+  const { q, limit = 10, branchId } = req.query;
 
   if (!q) {
     throw new ValidationError("Search query required");
   }
 
   const result = await db.query(
-    `SELECT id, sku, barcode, name, selling_price, is_active
-     FROM products
-     WHERE deleted_at IS NULL
-     AND (name ILIKE $1 OR sku ILIKE $1 OR barcode ILIKE $1)
-     ORDER BY name
+    `SELECT p.id, p.sku, p.barcode, p.name, p.selling_price, p.is_active, p.cost_price, p.unit,
+            COALESCE(stock_agg.total_quantity, 0) as stock_quantity,
+            COALESCE(stock_agg.total_available, 0) as available_quantity,
+            stock_agg.branch_stocks
+     FROM products p
+     LEFT JOIN (
+       SELECT 
+         product_id,
+         ${
+           branchId
+             ? `MAX(CASE WHEN branch_id = ${parseInt(
+                 branchId
+               )} THEN quantity ELSE 0 END)`
+             : "SUM(quantity)"
+         } as total_quantity,
+         ${
+           branchId
+             ? `MAX(CASE WHEN branch_id = ${parseInt(
+                 branchId
+               )} THEN available_quantity ELSE 0 END)`
+             : "SUM(available_quantity)"
+         } as total_available,
+         jsonb_agg(
+           jsonb_build_object(
+             'branchId', branch_id,
+             'quantity', quantity,
+             'reservedQuantity', reserved_quantity,
+             'availableQuantity', available_quantity
+           )
+         ) as branch_stocks
+       FROM product_stocks
+       ${branchId ? `WHERE branch_id = ${parseInt(branchId)}` : ""}
+       GROUP BY product_id
+     ) stock_agg ON p.id = stock_agg.product_id
+     WHERE p.deleted_at IS NULL
+     AND (p.name ILIKE $1 OR p.sku ILIKE $1 OR p.barcode ILIKE $1)
+     ORDER BY p.name
      LIMIT $2`,
     [`%${q}%`, limit]
   );

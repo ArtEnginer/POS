@@ -96,7 +96,7 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
         _CartItem(
           productId: item.productId,
           productName: item.productName,
-          quantity: item.quantityOrdered.toDouble(),
+          quantity: item.quantityOrdered,
           price: item.unitPrice,
         ),
       );
@@ -983,7 +983,7 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
                   productId: item.productId,
                   productName: item.productName,
                   sku: '', // TODO: Get from product
-                  quantityOrdered: item.quantity.toInt(),
+                  quantityOrdered: item.quantity,
                   unitPrice: item.price,
                   subtotal: item.quantity * item.price,
                   total: item.quantity * item.price,

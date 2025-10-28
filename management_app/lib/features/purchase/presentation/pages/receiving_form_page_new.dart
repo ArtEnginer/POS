@@ -151,7 +151,7 @@ class _ReceivingFormPageNewState extends State<ReceivingFormPageNew>
               productId: receivingItem.productId,
               productName: receivingItem.productName,
               sku: '',
-              quantityOrdered: receivingItem.poQuantity.toInt(),
+              quantityOrdered: receivingItem.poQuantity,
               unitPrice: receivingItem.poPrice,
               subtotal: 0,
               total: 0,

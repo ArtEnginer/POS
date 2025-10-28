@@ -13,9 +13,9 @@ class Product extends Equatable {
   final String unit;
   final double costPrice;
   final double sellingPrice;
-  final int stock; // Total stock across all branches
-  final int minStock;
-  final int maxStock;
+  final double stock; // Total stock across all branches
+  final double minStock;
+  final double maxStock;
   final int reorderPoint;
   final String? imageUrl;
   final bool isActive;
@@ -94,9 +94,9 @@ class Product extends Equatable {
     String? unit,
     double? costPrice,
     double? sellingPrice,
-    int? stock,
-    int? minStock,
-    int? maxStock,
+    double? stock,
+    double? minStock,
+    double? maxStock,
     int? reorderPoint,
     String? imageUrl,
     bool? isActive,

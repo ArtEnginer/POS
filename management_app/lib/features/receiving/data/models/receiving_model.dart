@@ -41,18 +41,42 @@ class ReceivingModel extends Receiving {
       deliveryOrderNumber: json['delivery_order_number'] as String?,
       vehicleNumber: json['vehicle_number'] as String?,
       driverName: json['driver_name'] as String?,
-      subtotal: (json['subtotal'] as num).toDouble(),
-      itemDiscount: (json['item_discount'] as num?)?.toDouble() ?? 0,
-      itemTax: (json['item_tax'] as num?)?.toDouble() ?? 0,
-      totalDiscount: (json['total_discount'] as num?)?.toDouble() ?? 0,
-      totalTax: (json['total_tax'] as num?)?.toDouble() ?? 0,
-      total: (json['total'] as num).toDouble(),
+      subtotal:
+          (json['subtotal'] is String)
+              ? double.tryParse(json['subtotal']) ?? 0.0
+              : (json['subtotal'] as num?)?.toDouble() ?? 0.0,
+      itemDiscount:
+          (json['item_discount'] is String)
+              ? double.tryParse(json['item_discount']) ?? 0.0
+              : (json['item_discount'] as num?)?.toDouble() ?? 0.0,
+      itemTax:
+          (json['item_tax'] is String)
+              ? double.tryParse(json['item_tax']) ?? 0.0
+              : (json['item_tax'] as num?)?.toDouble() ?? 0.0,
+      totalDiscount:
+          (json['total_discount'] is String)
+              ? double.tryParse(json['total_discount']) ?? 0.0
+              : (json['total_discount'] as num?)?.toDouble() ?? 0.0,
+      totalTax:
+          (json['total_tax'] is String)
+              ? double.tryParse(json['total_tax']) ?? 0.0
+              : (json['total_tax'] as num?)?.toDouble() ?? 0.0,
+      total:
+          (json['total'] is String)
+              ? double.tryParse(json['total']) ?? 0.0
+              : (json['total'] as num?)?.toDouble() ?? 0.0,
       status: json['status'] as String? ?? 'completed',
       notes: json['notes'] as String?,
       receivedBy: json['received_by']?.toString(),
       syncStatus: json['sync_status'] as String? ?? 'pending',
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      items:
+          json['items'] != null
+              ? (json['items'] as List)
+                  .map((item) => ReceivingItemModel.fromJson(item))
+                  .toList()
+              : [],
     );
   }
 
@@ -152,16 +176,40 @@ class ReceivingItemModel extends ReceivingItem {
       purchaseItemId: json['purchase_item_id']?.toString(),
       productId: json['product_id']?.toString() ?? '',
       productName: json['product_name'] as String,
-      poQuantity: (json['po_quantity'] as num).toDouble(),
-      poPrice: (json['po_price'] as num).toDouble(),
-      receivedQuantity: (json['received_quantity'] as num).toDouble(),
-      receivedPrice: (json['received_price'] as num).toDouble(),
-      discount: (json['discount'] as num?)?.toDouble() ?? 0,
+      poQuantity:
+          (json['po_quantity'] is String)
+              ? double.tryParse(json['po_quantity']) ?? 0.0
+              : (json['po_quantity'] as num?)?.toDouble() ?? 0.0,
+      poPrice:
+          (json['po_price'] is String)
+              ? double.tryParse(json['po_price']) ?? 0.0
+              : (json['po_price'] as num?)?.toDouble() ?? 0.0,
+      receivedQuantity:
+          (json['received_quantity'] is String)
+              ? double.tryParse(json['received_quantity']) ?? 0.0
+              : (json['received_quantity'] as num?)?.toDouble() ?? 0.0,
+      receivedPrice:
+          (json['received_price'] is String)
+              ? double.tryParse(json['received_price']) ?? 0.0
+              : (json['received_price'] as num?)?.toDouble() ?? 0.0,
+      discount:
+          (json['discount'] is String)
+              ? double.tryParse(json['discount']) ?? 0.0
+              : (json['discount'] as num?)?.toDouble() ?? 0.0,
       discountType: json['discount_type'] as String? ?? 'amount',
-      tax: (json['tax'] as num?)?.toDouble() ?? 0,
+      tax:
+          (json['tax'] is String)
+              ? double.tryParse(json['tax']) ?? 0.0
+              : (json['tax'] as num?)?.toDouble() ?? 0.0,
       taxType: json['tax_type'] as String? ?? 'amount',
-      subtotal: (json['subtotal'] as num).toDouble(),
-      total: (json['total'] as num).toDouble(),
+      subtotal:
+          (json['subtotal'] is String)
+              ? double.tryParse(json['subtotal']) ?? 0.0
+              : (json['subtotal'] as num?)?.toDouble() ?? 0.0,
+      total:
+          (json['total'] is String)
+              ? double.tryParse(json['total']) ?? 0.0
+              : (json['total'] as num?)?.toDouble() ?? 0.0,
       notes: json['notes'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -170,8 +218,12 @@ class ReceivingItemModel extends ReceivingItem {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'receiving_id': int.tryParse(receivingId) ?? receivingId, // Convert string to int
-      'purchase_item_id': purchaseItemId != null ? (int.tryParse(purchaseItemId!) ?? purchaseItemId) : null,
+      'receiving_id':
+          int.tryParse(receivingId) ?? receivingId, // Convert string to int
+      'purchase_item_id':
+          purchaseItemId != null
+              ? (int.tryParse(purchaseItemId!) ?? purchaseItemId)
+              : null,
       'product_id':
           int.tryParse(productId) ?? productId, // Convert string to int
       'product_name': productName,

@@ -225,7 +225,7 @@ class ProductRepositoryImpl implements ProductRepository {
   @override
   Future<Either<Failure, void>> updateStock(
     String id,
-    int quantity, {
+    double quantity, {
     String? branchId,
     String operation = 'set',
   }) async {

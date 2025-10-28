@@ -255,6 +255,16 @@ export const createReceiving = async (req, res) => {
           ]
         );
 
+        // Update purchase item quantity_received
+        if (purchaseItemIdInt) {
+          await client.query(
+            `UPDATE purchase_items 
+             SET quantity_received = quantity_received + $1
+             WHERE id = $2`,
+            [item.received_quantity, purchaseItemIdInt]
+          );
+        }
+
         // Update product stock (add received quantity)
         // Assuming branch_id from purchase
         const purchaseData = await client.query(
@@ -288,7 +298,36 @@ export const createReceiving = async (req, res) => {
     }
 
     // Update purchase status based on received quantities
-    // (You can implement logic here to set status to 'partial' or 'received')
+    const purchaseItemsCheck = await client.query(
+      `SELECT 
+        COUNT(*) as total_items,
+        SUM(CASE WHEN quantity_received >= quantity_ordered THEN 1 ELSE 0 END) as fully_received_items,
+        SUM(CASE WHEN quantity_received > 0 THEN 1 ELSE 0 END) as partially_received_items
+       FROM purchase_items 
+       WHERE purchase_id = $1`,
+      [purchaseIdInt]
+    );
+
+    const { total_items, fully_received_items, partially_received_items } =
+      purchaseItemsCheck.rows[0];
+
+    let newPurchaseStatus = "received";
+    if (parseInt(fully_received_items) === parseInt(total_items)) {
+      // All items fully received
+      newPurchaseStatus = "received";
+    } else if (parseInt(partially_received_items) > 0) {
+      // Some items received
+      newPurchaseStatus = "partial";
+    }
+
+    // Update purchase status
+    await client.query(
+      `UPDATE purchases 
+       SET status = $1, 
+           updated_at = NOW() 
+       WHERE id = $2`,
+      [newPurchaseStatus, purchaseIdInt]
+    );
 
     await client.query("COMMIT");
 
@@ -377,13 +416,55 @@ export const updateReceiving = async (req, res) => {
 
     // Update items if provided
     if (items && items.length > 0) {
+      // Get the original items to reverse stock changes
+      const originalItems = await client.query(
+        "SELECT * FROM receiving_items WHERE receiving_id = $1",
+        [id]
+      );
+
+      // Get purchase_id and branch_id
+      const receivingData = await client.query(
+        `SELECT r.purchase_id, p.branch_id 
+         FROM receivings r 
+         JOIN purchases p ON r.purchase_id = p.id 
+         WHERE r.id = $1`,
+        [id]
+      );
+      const purchaseIdInt = receivingData.rows[0]?.purchase_id;
+      const branchId = receivingData.rows[0]?.branch_id;
+
+      // Reverse stock changes from original items
+      for (const originalItem of originalItems.rows) {
+        if (branchId) {
+          // Reduce stock by original received quantity
+          await client.query(
+            `UPDATE product_stocks 
+             SET quantity = quantity - $1, 
+                 updated_at = NOW() 
+             WHERE product_id = $2 AND branch_id = $3`,
+            [originalItem.received_quantity, originalItem.product_id, branchId]
+          );
+        }
+
+        // Reverse purchase item quantity_received
+        if (originalItem.purchase_item_id) {
+          await client.query(
+            `UPDATE purchase_items 
+             SET quantity_received = quantity_received - $1, 
+                 updated_at = NOW() 
+             WHERE id = $2`,
+            [originalItem.received_quantity, originalItem.purchase_item_id]
+          );
+        }
+      }
+
       // Delete existing items
       await client.query(
         "DELETE FROM receiving_items WHERE receiving_id = $1",
         [id]
       );
 
-      // Insert new items
+      // Insert new items and update stock
       for (const item of items) {
         const productIdInt = parseInt(item.product_id);
         const purchaseItemIdInt = item.purchase_item_id
@@ -414,6 +495,74 @@ export const updateReceiving = async (req, res) => {
             item.notes || null,
           ]
         );
+
+        // Update purchase item quantity_received
+        if (purchaseItemIdInt) {
+          await client.query(
+            `UPDATE purchase_items 
+             SET quantity_received = quantity_received + $1, 
+                 updated_at = NOW() 
+             WHERE id = $2`,
+            [item.received_quantity, purchaseItemIdInt]
+          );
+        }
+
+        // Update product stock (add received quantity)
+        if (branchId) {
+          // Check if product stock exists
+          const stockCheck = await client.query(
+            "SELECT id, quantity FROM product_stocks WHERE product_id = $1 AND branch_id = $2",
+            [productIdInt, branchId]
+          );
+
+          if (stockCheck.rows.length > 0) {
+            // Update existing stock
+            await client.query(
+              "UPDATE product_stocks SET quantity = quantity + $1, updated_at = NOW() WHERE product_id = $2 AND branch_id = $3",
+              [item.received_quantity, productIdInt, branchId]
+            );
+          } else {
+            // Insert new stock record
+            await client.query(
+              "INSERT INTO product_stocks (product_id, branch_id, quantity, reserved_quantity, updated_at) VALUES ($1, $2, $3, 0, NOW())",
+              [productIdInt, branchId, item.received_quantity]
+            );
+          }
+        }
+      }
+
+      // Update purchase status based on received quantities
+      if (purchaseIdInt) {
+        const purchaseItemsCheck = await client.query(
+          `SELECT 
+            COUNT(*) as total_items,
+            SUM(CASE WHEN quantity_received >= quantity_ordered THEN 1 ELSE 0 END) as fully_received_items,
+            SUM(CASE WHEN quantity_received > 0 THEN 1 ELSE 0 END) as partially_received_items
+           FROM purchase_items 
+           WHERE purchase_id = $1`,
+          [purchaseIdInt]
+        );
+
+        const { total_items, fully_received_items, partially_received_items } =
+          purchaseItemsCheck.rows[0];
+
+        let newPurchaseStatus = "approved";
+        if (parseInt(fully_received_items) === parseInt(total_items)) {
+          // All items fully received
+          newPurchaseStatus = "received";
+        } else if (parseInt(partially_received_items) > 0) {
+          // Some items received
+          newPurchaseStatus = "partial";
+        }
+
+        // Update purchase status
+        await client.query(
+          `UPDATE purchases 
+           SET status = $1, 
+               updated_at = NOW() 
+           WHERE id = $2`,
+          [newPurchaseStatus, purchaseIdInt]
+        );
       }
     }
 
@@ -442,26 +591,107 @@ export const updateReceiving = async (req, res) => {
 
 // Delete receiving
 export const deleteReceiving = async (req, res) => {
+  const client = await db.getClient();
+
   try {
+    await client.query("BEGIN");
+
     const { id } = req.params;
 
+    // Get receiving items before deletion to reverse stock changes
+    const itemsResult = await client.query(
+      "SELECT * FROM receiving_items WHERE receiving_id = $1",
+      [id]
+    );
+
+    // Get purchase_id and branch_id
+    const receivingData = await client.query(
+      `SELECT r.purchase_id, p.branch_id 
+       FROM receivings r 
+       JOIN purchases p ON r.purchase_id = p.id 
+       WHERE r.id = $1`,
+      [id]
+    );
+    const purchaseIdInt = receivingData.rows[0]?.purchase_id;
+    const branchId = receivingData.rows[0]?.branch_id;
+
+    // Reverse stock changes
+    for (const item of itemsResult.rows) {
+      if (branchId) {
+        // Reduce stock by received quantity
+        await client.query(
+          `UPDATE product_stocks 
+           SET quantity = quantity - $1, 
+               updated_at = NOW() 
+           WHERE product_id = $2 AND branch_id = $3`,
+          [item.received_quantity, item.product_id, branchId]
+        );
+      }
+
+      // Reverse purchase item quantity_received
+      if (item.purchase_item_id) {
+        await client.query(
+          `UPDATE purchase_items 
+           SET quantity_received = quantity_received - $1
+           WHERE id = $2`,
+          [item.received_quantity, item.purchase_item_id]
+        );
+      }
+    }
+
+    // Update purchase status based on remaining received quantities
+    if (purchaseIdInt) {
+      const purchaseItemsCheck = await client.query(
+        `SELECT 
+          COUNT(*) as total_items,
+          SUM(CASE WHEN quantity_received >= quantity_ordered THEN 1 ELSE 0 END) as fully_received_items,
+          SUM(CASE WHEN quantity_received > 0 THEN 1 ELSE 0 END) as partially_received_items
+         FROM purchase_items 
+         WHERE purchase_id = $1`,
+        [purchaseIdInt]
+      );
+
+      const { total_items, fully_received_items, partially_received_items } =
+        purchaseItemsCheck.rows[0];
+
+      let newPurchaseStatus = "approved";
+      if (parseInt(fully_received_items) === parseInt(total_items)) {
+        newPurchaseStatus = "received";
+      } else if (parseInt(partially_received_items) > 0) {
+        newPurchaseStatus = "partial";
+      }
+
+      // Update purchase status
+      await client.query(
+        `UPDATE purchases 
+         SET status = $1
+         WHERE id = $2`,
+        [newPurchaseStatus, purchaseIdInt]
+      );
+    }
+
     // Soft delete
-    await db.query(
+    await client.query(
       "UPDATE receivings SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
       [id]
     );
+
+    await client.query("COMMIT");
 
     res.json({
       success: true,
       message: "Receiving deleted successfully",
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Error deleting receiving:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete receiving",
       error: error.message,
     });
+  } finally {
+    client.release();
   }
 };
 

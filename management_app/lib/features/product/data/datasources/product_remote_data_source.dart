@@ -14,7 +14,7 @@ abstract class ProductRemoteDataSource {
   Future<void> deleteProduct(String id);
   Future<void> updateStock(
     String id,
-    int quantity, {
+    double quantity, {
     String? branchId,
     String operation = 'set',
   });
@@ -227,7 +227,7 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
   @override
   Future<void> updateStock(
     String id,
-    int quantity, {
+    double quantity, {
     String? branchId,
     String operation = 'set',
   }) async {
@@ -291,7 +291,7 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
 
   void _emitStockUpdate(
     String productId,
-    int quantity,
+    double quantity,
     String branchId,
     String operation,
   ) {

@@ -245,7 +245,7 @@ class MultiBranchStockWidget extends StatelessWidget {
     );
   }
 
-  Color _getStockColor(int stock) {
+  Color _getStockColor(double stock) {
     if (stock <= 0) return Colors.red;
     if (stock <= product.minStock) return Colors.orange;
     if (stock <= product.reorderPoint) return Colors.amber;

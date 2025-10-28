@@ -103,7 +103,7 @@ class DatabaseHelper {
         sale_id TEXT NOT NULL,
         product_id TEXT NOT NULL,
         product_name TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
+        quantity REAL NOT NULL,
         price REAL NOT NULL,
         subtotal REAL NOT NULL,
         FOREIGN KEY (sale_id) REFERENCES $tableSales (id)

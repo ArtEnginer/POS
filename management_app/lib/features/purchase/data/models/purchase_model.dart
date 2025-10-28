@@ -171,8 +171,14 @@ class PurchaseItemModel extends PurchaseItem {
       productId: json['product_id']?.toString() ?? '',
       productName: json['product_name'] as String,
       sku: json['sku'] as String,
-      quantityOrdered: json['quantity_ordered'] as int,
-      quantityReceived: json['quantity_received'] as int? ?? 0,
+      quantityOrdered:
+          (json['quantity_ordered'] is String)
+              ? double.tryParse(json['quantity_ordered']) ?? 0.0
+              : (json['quantity_ordered'] as num?)?.toDouble() ?? 0.0,
+      quantityReceived:
+          (json['quantity_received'] is String)
+              ? double.tryParse(json['quantity_received']) ?? 0.0
+              : (json['quantity_received'] as num?)?.toDouble() ?? 0.0,
       unitPrice:
           (json['unit_price'] is String)
               ? double.tryParse(json['unit_price']) ?? 0.0

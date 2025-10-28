@@ -1,0 +1,242 @@
+/**
+ * ============================================
+ * SETUP DATABASE - COMPLETE RESET & REINSTALL
+ * ============================================
+ *
+ * Script ini akan:
+ * 1. DROP semua table lama (HATI-HATI: DATA AKAN HILANG!)
+ * 2. CREATE ulang semua table dengan schema terbaru
+ * 3. Setup quantity dengan DECIMAL (mendukung pecahan)
+ * 4. Insert data default (admin user, branch, dll)
+ *
+ * Run dengan: node setup_database_complete.js
+ */
+
+import pg from "pg";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const { Pool } = pg;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Database configuration
+const pool = new Pool({
+  host: process.env.DB_HOST || "localhost",
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || "pos_enterprise",
+  user: process.env.DB_USER || "postgres",
+  password: process.env.DB_PASSWORD || "admin123",
+});
+
+async function setupDatabase() {
+  const client = await pool.connect();
+
+  try {
+    console.log(
+      "╔══════════════════════════════════════════════════════════════════╗"
+    );
+    console.log(
+      "║     POS ENTERPRISE - COMPLETE DATABASE SETUP                     ║"
+    );
+    console.log(
+      "║     Version 2.0 - WITH DECIMAL QUANTITY SUPPORT                  ║"
+    );
+    console.log(
+      "╚══════════════════════════════════════════════════════════════════╝"
+    );
+    console.log("");
+
+    // Konfirmasi dari user
+    console.log(
+      "⚠️  WARNING: Ini akan MENGHAPUS semua data dan table yang ada!"
+    );
+    console.log("⚠️  Pastikan Anda sudah backup database jika diperlukan.");
+    console.log("");
+
+    // Read complete schema SQL file
+    const schemaPath = path.join(
+      __dirname,
+      "src",
+      "database",
+      "COMPLETE_SCHEMA.sql"
+    );
+
+    console.log("📖 Reading complete schema file:", schemaPath);
+
+    if (!fs.existsSync(schemaPath)) {
+      throw new Error(`Schema file not found: ${schemaPath}`);
+    }
+
+    const schemaSQL = fs.readFileSync(schemaPath, "utf8");
+
+    console.log("✅ Schema file loaded successfully");
+    console.log("");
+
+    // Execute complete schema
+    console.log("🔄 Executing complete database setup...");
+    console.log("   - Dropping old tables and types");
+    console.log("   - Creating new tables with DECIMAL quantity");
+    console.log("   - Setting up indexes and triggers");
+    console.log("   - Inserting default data");
+    console.log("");
+
+    const startTime = Date.now();
+
+    await client.query(schemaSQL);
+
+    const endTime = Date.now();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+    console.log("");
+    console.log("✅ Database setup completed in " + duration + " seconds");
+    console.log("");
+
+    // Verify tables created
+    console.log("🔍 Verifying database structure...");
+    console.log("");
+
+    const tablesQuery = `
+      SELECT table_name, 
+             (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name AND table_schema = 'public') as column_count
+      FROM information_schema.tables t
+      WHERE table_schema = 'public' 
+        AND table_type = 'BASE TABLE'
+      ORDER BY table_name;
+    `;
+
+    const tablesResult = await client.query(tablesQuery);
+
+    console.log("📊 CREATED TABLES:");
+    console.log("┌─────────────────────────────┬──────────┐");
+    console.log("│ Table Name                  │ Columns  │");
+    console.log("├─────────────────────────────┼──────────┤");
+
+    tablesResult.rows.forEach((row) => {
+      console.log(
+        `│ ${row.table_name.padEnd(27)} │ ${String(row.column_count).padEnd(
+          8
+        )} │`
+      );
+    });
+
+    console.log("└─────────────────────────────┴──────────┘");
+    console.log("");
+
+    // Verify DECIMAL columns
+    console.log("🔍 Verifying DECIMAL quantity columns...");
+    console.log("");
+
+    const decimalQuery = `
+      SELECT 
+        table_name,
+        column_name,
+        data_type,
+        numeric_precision,
+        numeric_scale
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND column_name LIKE '%quantity%'
+        AND data_type = 'numeric'
+      ORDER BY table_name, column_name;
+    `;
+
+    const decimalResult = await client.query(decimalQuery);
+
+    console.log("📐 DECIMAL QUANTITY COLUMNS:");
+    console.log(
+      "┌─────────────────────────┬──────────────────────────┬───────────┬────────┐"
+    );
+    console.log(
+      "│ Table                   │ Column                   │ Precision │ Scale  │"
+    );
+    console.log(
+      "├─────────────────────────┼──────────────────────────┼───────────┼────────┤"
+    );
+
+    decimalResult.rows.forEach((row) => {
+      console.log(
+        `│ ${row.table_name.padEnd(23)} │ ${row.column_name.padEnd(
+          24
+        )} │ ${String(row.numeric_precision).padEnd(9)} │ ${String(
+          row.numeric_scale
+        ).padEnd(6)} │`
+      );
+    });
+
+    console.log(
+      "└─────────────────────────┴──────────────────────────┴───────────┴────────┘"
+    );
+    console.log("");
+
+    // Show default data
+    console.log("👤 DEFAULT CREDENTIALS:");
+    console.log("   Username: admin");
+    console.log("   Password: admin123");
+    console.log("   Role: super_admin");
+    console.log("");
+
+    console.log("🏢 DEFAULT BRANCH:");
+    console.log("   Code: HQ");
+    console.log("   Name: Head Office");
+    console.log("");
+
+    console.log(
+      "╔══════════════════════════════════════════════════════════════════╗"
+    );
+    console.log(
+      "║                    ✅ SETUP COMPLETED!                            ║"
+    );
+    console.log(
+      "╚══════════════════════════════════════════════════════════════════╝"
+    );
+    console.log("");
+    console.log("📝 NEXT STEPS:");
+    console.log("   1. Backend siap digunakan (npm run dev)");
+    console.log("   2. Update Flutter models untuk quantity: int → double");
+    console.log("   3. Update form validators: int.tryParse → double.tryParse");
+    console.log("   4. Test dengan data quantity pecahan (1.5, 2.75, dll)");
+    console.log("");
+    console.log("📚 Documentation: Lihat QUANTITY_MIGRATION_GUIDE.md");
+    console.log("");
+  } catch (error) {
+    console.error("");
+    console.error("❌ DATABASE SETUP FAILED!");
+    console.error("");
+    console.error("Error:", error.message);
+
+    if (error.stack) {
+      console.error("");
+      console.error("Stack trace:");
+      console.error(error.stack);
+    }
+
+    console.error("");
+    console.error("💡 TROUBLESHOOTING:");
+    console.error("   1. Pastikan PostgreSQL sudah running");
+    console.error(
+      "   2. Check .env file (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)"
+    );
+    console.error(
+      "   3. Pastikan user PostgreSQL punya permission CREATE/DROP"
+    );
+    console.error("   4. Database 'pos_enterprise' sudah dibuat");
+    console.error("");
+
+    process.exit(1);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+// Run setup
+console.log("");
+setupDatabase().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});

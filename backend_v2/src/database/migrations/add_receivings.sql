@@ -52,11 +52,11 @@ CREATE TABLE IF NOT EXISTS receiving_items (
     product_name VARCHAR(255) NOT NULL,
     
     -- PO Reference
-    po_quantity DECIMAL(10, 2) DEFAULT 0,
+    po_quantity DECIMAL(15, 3) DEFAULT 0,
     po_price DECIMAL(15, 2) DEFAULT 0,
     
     -- Received Data
-    received_quantity DECIMAL(10, 2) NOT NULL,
+    received_quantity DECIMAL(15, 3) NOT NULL,
     received_price DECIMAL(15, 2) NOT NULL,
     
     -- Discount & Tax per item

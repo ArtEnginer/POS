@@ -16,7 +16,7 @@ abstract class ProductRepository {
   Future<Either<Failure, void>> deleteProduct(String id);
   Future<Either<Failure, void>> updateStock(
     String id,
-    int quantity, {
+    double quantity, {
     String? branchId,
     String operation = 'set',
   });

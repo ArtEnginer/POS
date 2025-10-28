@@ -27,9 +27,25 @@ export const getAllPurchases = async (req, res) => {
 
     const result = await db.query(query, params);
 
+    // Fetch items for each purchase
+    const purchasesWithItems = await Promise.all(
+      result.rows.map(async (purchase) => {
+        const itemsResult = await db.query(
+          `SELECT * FROM purchase_items 
+           WHERE purchase_id = $1 
+           ORDER BY id`,
+          [purchase.id]
+        );
+        return {
+          ...purchase,
+          items: itemsResult.rows,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: result.rows,
+      data: purchasesWithItems,
     });
   } catch (error) {
     console.error("Error fetching purchases:", error);
@@ -115,9 +131,25 @@ export const searchPurchases = async (req, res) => {
       [`%${q}%`]
     );
 
+    // Fetch items for each purchase
+    const purchasesWithItems = await Promise.all(
+      result.rows.map(async (purchase) => {
+        const itemsResult = await db.query(
+          `SELECT * FROM purchase_items 
+           WHERE purchase_id = $1 
+           ORDER BY id`,
+          [purchase.id]
+        );
+        return {
+          ...purchase,
+          items: itemsResult.rows,
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: result.rows,
+      data: purchasesWithItems,
     });
   } catch (error) {
     console.error("Error searching purchases:", error);
@@ -305,7 +337,7 @@ export const updatePurchase = async (req, res) => {
 
     // Check if purchase exists
     const existingPurchase = await client.query(
-      "SELECT id FROM purchases WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT id, status FROM purchases WHERE id = $1 AND deleted_at IS NULL",
       [id]
     );
 
@@ -314,6 +346,20 @@ export const updatePurchase = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Purchase not found",
+      });
+    }
+
+    // Check if purchase status allows editing (only draft, ordered, partial can be edited)
+    const currentStatus = existingPurchase.rows[0].status.toLowerCase();
+    const editableStatuses = ["draft", "ordered", "partial"];
+
+    if (!editableStatuses.includes(currentStatus)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: `Cannot edit purchase with status: ${currentStatus}. Only purchases with status ${editableStatuses.join(
+          ", "
+        )} can be edited.`,
       });
     }
 
@@ -441,7 +487,7 @@ export const deletePurchase = async (req, res) => {
 
     // Check if purchase exists
     const existingPurchase = await db.query(
-      "SELECT purchase_number FROM purchases WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT purchase_number, status FROM purchases WHERE id = $1 AND deleted_at IS NULL",
       [id]
     );
 
@@ -449,6 +495,19 @@ export const deletePurchase = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Purchase not found",
+      });
+    }
+
+    // Check if purchase status allows deletion (only draft, ordered, partial can be deleted)
+    const currentStatus = existingPurchase.rows[0].status.toLowerCase();
+    const deletableStatuses = ["draft", "ordered", "partial"];
+
+    if (!deletableStatuses.includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete purchase with status: ${currentStatus}. Only purchases with status ${deletableStatuses.join(
+          ", "
+        )} can be deleted.`,
       });
     }
 

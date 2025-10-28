@@ -141,8 +141,8 @@ class PurchaseItem extends Equatable {
   final String productId;
   final String productName;
   final String sku;
-  final int quantityOrdered;
-  final int quantityReceived;
+  final double quantityOrdered;
+  final double quantityReceived;
   final double unitPrice;
   final double discountAmount;
   final double taxAmount;

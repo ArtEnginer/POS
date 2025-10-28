@@ -38,7 +38,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
   final _discountController = TextEditingController();
 
   late final ProductBloc _productBloc;
-  String _selectedUnit = 'pcs';
+  String _selectedUnit = 'PCS';
   List<Map<String, String>> _categories = [];
   String? _selectedCategoryId;
   String? _selectedCategoryName;
@@ -47,16 +47,16 @@ class _ProductFormPageState extends State<ProductFormPage> {
   bool _isLoadingCategories = false;
 
   final List<String> _units = [
-    'pcs',
-    'kg',
-    'gram',
-    'liter',
-    'ml',
-    'box',
-    'pack',
-    'dus',
-    'lusin',
-    'meter',
+    'PCS',
+    'KG',
+    'GRAM',
+    'LITER',
+    'ML',
+    'BOX',
+    'PACK',
+    'DUS',
+    'LUSIN',
+    'METER',
   ];
 
   @override
@@ -826,12 +826,12 @@ class _ProductFormPageState extends State<ProductFormPage> {
         unit: _selectedUnit,
         costPrice: double.parse(_costPriceController.text),
         sellingPrice: double.parse(_sellingPriceController.text),
-        stock: int.parse(_stockController.text),
-        minStock: int.parse(_minStockController.text),
+        stock: double.parse(_stockController.text),
+        minStock: double.parse(_minStockController.text),
         maxStock:
             _maxStockController.text.isEmpty
                 ? 0
-                : int.parse(_maxStockController.text),
+                : double.parse(_maxStockController.text),
         reorderPoint:
             _reorderPointController.text.isEmpty
                 ? 0
