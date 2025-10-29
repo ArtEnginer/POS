@@ -6,11 +6,19 @@ import '../../../../injection_container.dart';
 import '../../../product/presentation/pages/product_list_page.dart';
 import '../../../purchase/presentation/bloc/purchase_bloc.dart';
 import '../../../purchase/presentation/pages/purchase_list_page.dart';
-import '../../../purchase/presentation/pages/receiving_list_page.dart';
+import '../../../receiving/presentation/pages/receiving_list_page.dart';
 import '../../../supplier/presentation/bloc/supplier_bloc.dart';
 import '../../../supplier/presentation/pages/supplier_list_page.dart';
 import '../../../customer/presentation/bloc/customer_bloc.dart';
 import '../../../customer/presentation/pages/customer_list_page.dart';
+import '../../../sales/presentation/pages/printer_settings_page.dart';
+import '../../../branch/presentation/bloc/branch_bloc.dart';
+import '../../../branch/presentation/pages/branch_list_page.dart';
+import '../../../user/presentation/pages/user_list_page.dart';
+import '../bloc/dashboard_bloc.dart';
+import 'management_home_page.dart';
+import 'app_settings_page.dart';
+import 'server_settings_page.dart';
 
 /// Management Dashboard - For data management only (No POS/Cashier)
 /// This app is for managing products, purchases, receiving, suppliers, customers
@@ -24,34 +32,36 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   int _selectedIndex = 0;
-  late final List<Widget> _pages;
+
+  // Create BLoCs once and reuse
+  late final DashboardBloc _dashboardBloc;
+  late final CustomerBloc _customerBloc;
+  late final SupplierBloc _supplierBloc;
+  late final PurchaseBloc _purchaseBloc;
+  late final PurchaseBloc _receivingBloc;
 
   @override
   void initState() {
     super.initState();
-    // Initialize pages for MANAGEMENT ONLY
-    _pages = [
-      const ManagementHomePage(), // Dashboard overview
-      const ProductListPage(),
-      BlocProvider(
-        create: (_) => sl<CustomerBloc>(),
-        child: const CustomerListPage(),
-      ),
-      BlocProvider(
-        create: (_) => sl<SupplierBloc>(),
-        child: const SupplierListPage(),
-      ),
-      BlocProvider(
-        create: (_) => sl<PurchaseBloc>(),
-        child: const PurchaseListPage(),
-      ),
-      BlocProvider(
-        create: (_) => sl<PurchaseBloc>(),
-        child: const ReceivingListPage(),
-      ),
-      const ReportsPage(),
-      const SettingsPage(),
-    ];
+    // Initialize BLoCs once
+    _dashboardBloc = sl<DashboardBloc>();
+    _customerBloc = sl<CustomerBloc>();
+    _supplierBloc = sl<SupplierBloc>();
+    _purchaseBloc = sl<PurchaseBloc>();
+    _receivingBloc = sl<PurchaseBloc>();
+
+    // Load dashboard data immediately
+    _dashboardBloc.add(LoadDashboardSummary());
+  }
+
+  @override
+  void dispose() {
+    _dashboardBloc.close();
+    _customerBloc.close();
+    _supplierBloc.close();
+    _purchaseBloc.close();
+    _receivingBloc.close();
+    super.dispose();
   }
 
   final List<_NavItem> _navItems = [
@@ -105,7 +115,36 @@ class _DashboardPageState extends State<DashboardPage> {
                       )
                       .toList(),
             ),
-          Expanded(child: _pages[_selectedIndex]),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                BlocProvider.value(
+                  value: _dashboardBloc,
+                  child: const ManagementHomePage(),
+                ),
+                const ProductListPageOptimized(),
+                BlocProvider.value(
+                  value: _customerBloc,
+                  child: const CustomerListPage(),
+                ),
+                BlocProvider.value(
+                  value: _supplierBloc,
+                  child: const SupplierListPage(),
+                ),
+                BlocProvider.value(
+                  value: _purchaseBloc,
+                  child: const PurchaseListPage(),
+                ),
+                BlocProvider.value(
+                  value: _receivingBloc,
+                  child: const ReceivingListPage(),
+                ),
+                const ReportsPage(),
+                const SettingsPage(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar:
@@ -136,159 +175,6 @@ class _NavItem {
   final String label;
 
   _NavItem({required this.icon, required this.label});
-}
-
-// Management Dashboard Home Page - Overview of business metrics
-class ManagementHomePage extends StatelessWidget {
-  const ManagementHomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard Manajemen'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // TODO: Refresh dashboard data
-            },
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Selamat Datang di Sistem Manajemen POS',
-              style: AppTextStyles.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Kelola data produk, pembelian, supplier, dan customer',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 3,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                children: [
-                  _DashboardCard(
-                    icon: Icons.inventory_2_outlined,
-                    title: 'Total Produk',
-                    value: '-',
-                    color: AppColors.primary,
-                    onTap: () {},
-                  ),
-                  _DashboardCard(
-                    icon: Icons.shopping_cart_outlined,
-                    title: 'Purchase Order',
-                    value: '-',
-                    color: AppColors.info,
-                    onTap: () {},
-                  ),
-                  _DashboardCard(
-                    icon: Icons.move_to_inbox,
-                    title: 'Receiving',
-                    value: '-',
-                    color: AppColors.success,
-                    onTap: () {},
-                  ),
-                  _DashboardCard(
-                    icon: Icons.people_outline,
-                    title: 'Customer',
-                    value: '-',
-                    color: AppColors.accent,
-                    onTap: () {},
-                  ),
-                  _DashboardCard(
-                    icon: Icons.business_outlined,
-                    title: 'Supplier',
-                    value: '-',
-                    color: AppColors.warning,
-                    onTap: () {},
-                  ),
-                  _DashboardCard(
-                    icon: Icons.low_priority,
-                    title: 'Stok Rendah',
-                    value: '-',
-                    color: AppColors.error,
-                    onTap: () {},
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _DashboardCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 40, color: color),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: AppTextStyles.labelMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                value,
-                style: AppTextStyles.headlineMedium.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class ReportsPage extends StatelessWidget {
@@ -344,50 +230,77 @@ class SettingsPage extends StatelessWidget {
             icon: Icons.person_outline,
             title: 'Profil Pengguna',
             subtitle: 'Kelola informasi akun Anda',
-            onTap: () {},
+            onTap: () {
+              // TODO: Navigate to user profile page
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Fitur profil akan segera hadir')),
+              );
+            },
           ),
           _SettingsTile(
-            icon: Icons.store_outlined,
-            title: 'Informasi Toko',
-            subtitle: 'Nama, alamat, dan kontak toko',
-            onTap: () {},
+            icon: Icons.people_outline,
+            title: 'Manajemen Pengguna',
+            subtitle: 'Kelola user dan permissions',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserListPage()),
+              );
+            },
+          ),
+          _SettingsTile(
+            icon: Icons.store,
+            title: 'Manajemen Cabang',
+            subtitle: 'Kelola data cabang/kantor pusat',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (context) => BlocProvider.value(
+                        value: BlocProvider.of<BranchBloc>(context),
+                        child: const BranchListPage(),
+                      ),
+                ),
+              );
+            },
+          ),
+          _SettingsTile(
+            icon: Icons.business,
+            title: 'Identitas Aplikasi',
+            subtitle: 'Nama, alamat, kontak toko, dan NPWP',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AppSettingsPage(),
+                ),
+              );
+            },
           ),
           _SettingsTile(
             icon: Icons.receipt_outlined,
-            title: 'Pengaturan Struk',
-            subtitle: 'Kustomisasi tampilan struk',
-            onTap: () {},
+            title: 'Pengaturan Printer',
+            subtitle: 'Konfigurasi printer untuk cetak struk',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PrinterSettingsPage(),
+                ),
+              );
+            },
           ),
           _SettingsTile(
             icon: Icons.cloud_outlined,
-            title: 'Backend Server',
-            subtitle: 'Node.js + PostgreSQL + Socket.IO',
+            title: 'Pengaturan Server',
+            subtitle: 'Konfigurasi Backend API dan WebSocket',
             onTap: () {
-              showDialog(
-                context: context,
-                builder:
-                    (context) => AlertDialog(
-                      title: const Text('Backend Server'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('API: http://localhost:3001/api/v2'),
-                          const SizedBox(height: 8),
-                          Text('Socket: ws://localhost:3001'),
-                          const SizedBox(height: 8),
-                          Text('Database: PostgreSQL'),
-                          const SizedBox(height: 8),
-                          Text('Cache: Redis'),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('OK'),
-                        ),
-                      ],
-                    ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ServerSettingsPage(),
+                ),
               );
             },
           ),
@@ -395,7 +308,20 @@ class SettingsPage extends StatelessWidget {
             icon: Icons.info_outline,
             title: 'Tentang Aplikasi',
             subtitle: 'POS Management App v2.0.0',
-            onTap: () {},
+            onTap: () {
+              showAboutDialog(
+                context: context,
+                applicationName: 'POS Management',
+                applicationVersion: '2.0.0',
+                applicationIcon: const Icon(Icons.point_of_sale, size: 48),
+                children: [
+                  const Text('Enterprise Point of Sale Management System'),
+                  const SizedBox(height: 8),
+                  const Text('Backend: Node.js + PostgreSQL + Redis'),
+                  const Text('Frontend: Flutter'),
+                ],
+              );
+            },
           ),
         ],
       ),

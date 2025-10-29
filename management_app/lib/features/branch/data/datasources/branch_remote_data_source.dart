@@ -24,8 +24,12 @@ class BranchRemoteDataSourceImpl implements BranchRemoteDataSource {
       final response = await apiClient.get(ApiConstants.branches);
 
       if (response.statusCode == 200) {
-        final data = response.data['data'] as List;
-        return data.map((json) => Branch.fromJson(json)).toList();
+        final data = response.data['data'];
+        if (data == null) {
+          return [];
+        }
+        final List dataList = data is List ? data : [];
+        return dataList.map((json) => Branch.fromJson(json)).toList();
       } else {
         throw ServerException(
           message: 'Failed to load branches',
@@ -122,8 +126,12 @@ class BranchRemoteDataSourceImpl implements BranchRemoteDataSource {
       );
 
       if (response.statusCode == 200) {
-        final data = response.data['data'] as List;
-        return data.map((json) => Branch.fromJson(json)).toList();
+        final data = response.data['data'];
+        if (data == null) {
+          return [];
+        }
+        final List dataList = data is List ? data : [];
+        return dataList.map((json) => Branch.fromJson(json)).toList();
       } else {
         throw ServerException(
           message: 'Failed to search branches',

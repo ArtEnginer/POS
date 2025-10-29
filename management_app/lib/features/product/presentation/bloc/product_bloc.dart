@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../domain/entities/product.dart';
 import '../../domain/usecases/product_usecases.dart';
 import 'product_event.dart' as event;
 import 'product_state.dart';
@@ -13,6 +14,8 @@ class ProductBloc extends Bloc<event.ProductEvent, ProductState> {
   final UpdateProduct updateProduct;
   final DeleteProduct deleteProduct;
   final UpdateProductStock updateProductStock;
+  final ImportProducts importProducts;
+  final DownloadImportTemplate downloadImportTemplate;
 
   ProductBloc({
     required this.getAllProducts,
@@ -24,6 +27,8 @@ class ProductBloc extends Bloc<event.ProductEvent, ProductState> {
     required this.updateProduct,
     required this.deleteProduct,
     required this.updateProductStock,
+    required this.importProducts,
+    required this.downloadImportTemplate,
   }) : super(const ProductInitial()) {
     on<event.LoadProducts>(_onLoadProducts);
     on<event.LoadProductById>(_onLoadProductById);
@@ -34,6 +39,8 @@ class ProductBloc extends Bloc<event.ProductEvent, ProductState> {
     on<event.UpdateProduct>(_onUpdateProduct);
     on<event.DeleteProduct>(_onDeleteProduct);
     on<event.UpdateProductStock>(_onUpdateProductStock);
+    on<event.ImportProducts>(_onImportProducts);
+    on<event.DownloadImportTemplate>(_onDownloadImportTemplate);
   }
 
   Future<void> _onLoadProducts(
@@ -42,12 +49,28 @@ class ProductBloc extends Bloc<event.ProductEvent, ProductState> {
   ) async {
     emit(const ProductLoading());
 
-    final result = await getAllProducts();
-
-    result.fold(
-      (failure) => emit(ProductError(failure.message)),
-      (products) => emit(ProductLoaded(products)),
+    final result = await getAllProducts(
+      page: ev.page,
+      limit: ev.limit,
+      search: ev.search,
+      sortBy: ev.sortBy,
+      ascending: ev.ascending,
     );
+
+    result.fold((failure) => emit(ProductError(failure.message)), (data) {
+      final products = data['products'] as List<dynamic>;
+      final pagination = data['pagination'] as Map<String, dynamic>;
+
+      emit(
+        ProductLoaded(
+          products.cast<Product>(),
+          currentPage: pagination['currentPage'] ?? 1,
+          totalPages: pagination['totalPages'] ?? 1,
+          totalItems: pagination['totalItems'] ?? 0,
+          itemsPerPage: pagination['itemsPerPage'] ?? ev.limit,
+        ),
+      );
+    });
   }
 
   Future<void> _onLoadProductById(
@@ -164,6 +187,41 @@ class ProductBloc extends Bloc<event.ProductEvent, ProductState> {
     result.fold(
       (failure) => emit(ProductError(failure.message)),
       (_) => emit(const ProductOperationSuccess('Stock updated successfully')),
+    );
+  }
+
+  Future<void> _onImportProducts(
+    event.ImportProducts ev,
+    Emitter<ProductState> emit,
+  ) async {
+    emit(const ProductLoading());
+
+    final result = await importProducts(ev.filePath);
+
+    result.fold(
+      (failure) => emit(ProductError(failure.message)),
+      (details) => emit(
+        ProductImportSuccess(
+          'Import berhasil: ${details['imported']} produk ditambahkan',
+          details,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onDownloadImportTemplate(
+    event.DownloadImportTemplate ev,
+    Emitter<ProductState> emit,
+  ) async {
+    emit(const ProductLoading());
+
+    final result = await downloadImportTemplate();
+
+    result.fold(
+      (failure) => emit(ProductError(failure.message)),
+      (filePath) => emit(
+        ProductOperationSuccess('Template berhasil diunduh ke: $filePath'),
+      ),
     );
   }
 }

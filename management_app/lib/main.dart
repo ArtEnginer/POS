@@ -7,12 +7,10 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
-import 'core/auth/auth_service.dart';
 import 'injection_container.dart' as di;
-import 'features/auth/presentation/pages/login_page.dart';
-import 'features/dashboard/presentation/pages/dashboard_page.dart';
+import 'features/dashboard/presentation/pages/server_check_page.dart';
 import 'features/branch/presentation/bloc/branch_bloc.dart';
-import 'core/network/connectivity_manager.dart';
+import 'features/user/presentation/bloc/user_bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,7 +41,10 @@ class ManagementApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
-      providers: [BlocProvider(create: (_) => di.sl<BranchBloc>())],
+      providers: [
+        BlocProvider(create: (_) => di.sl<BranchBloc>()),
+        BlocProvider(create: (_) => di.sl<UserBloc>()),
+      ],
       child: MaterialApp(
         title: AppConstants.appName,
         debugShowCheckedModeBanner: false,
@@ -74,64 +75,9 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    // Check internet connectivity - Management App requires online connection
-    final connectivityManager = di.sl<ConnectivityManager>();
-    await connectivityManager.initialize();
-    final isOnline = connectivityManager.isOnline;
-
-    if (!isOnline) {
-      // Show error dialog for no internet
-      _showNoInternetDialog();
-      return;
-    }
-
-    // Check authentication status
-    final authService = di.sl<AuthService>();
-    final isAuthenticated = await authService.isAuthenticated();
-
-    if (mounted) {
-      if (isAuthenticated) {
-        // Already logged in, go to dashboard
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const DashboardPage()),
-        );
-      } else {
-        // Not logged in, go to login page
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-        );
-      }
-    }
-  }
-
-  void _showNoInternetDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.wifi_off, color: Colors.red),
-                SizedBox(width: 10),
-                Text('Tidak Ada Koneksi'),
-              ],
-            ),
-            content: const Text(
-              'Management App memerlukan koneksi internet untuk beroperasi.\n\n'
-              'Silakan periksa koneksi internet Anda dan coba lagi.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _initializeApp(); // Retry
-                },
-                child: const Text('COBA LAGI'),
-              ),
-              TextButton(onPressed: () => exit(0), child: const Text('KELUAR')),
-            ],
-          ),
+    // Langsung ke ServerCheckPage untuk validasi server
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const ServerCheckPage()),
     );
   }
 

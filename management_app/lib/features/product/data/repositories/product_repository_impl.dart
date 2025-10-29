@@ -57,13 +57,26 @@ class ProductRepositoryImpl implements ProductRepository {
   }
 
   @override
-  Future<Either<Failure, List<Product>>> getAllProducts() async {
+  Future<Either<Failure, Map<String, dynamic>>> getAllProducts({
+    int page = 1,
+    int limit = 20,
+    String? search,
+    String? sortBy,
+    bool ascending = true,
+  }) async {
     try {
       await _ensureOnline();
 
-      // Always fetch from remote (PostgreSQL)
-      final products = await remoteDataSource.getAllProducts();
-      return Right(products);
+      // Always fetch from remote (PostgreSQL) with server-side pagination
+      final result = await remoteDataSource.getAllProducts(
+        page: page,
+        limit: limit,
+        search: search,
+        sortBy: sortBy,
+        ascending: ascending,
+      );
+
+      return Right(result);
     } on NetworkException catch (e) {
       return Left(NetworkFailure(message: e.message));
     } on ServerException catch (e) {
@@ -81,9 +94,12 @@ class ProductRepositoryImpl implements ProductRepository {
       await _ensureOnline();
 
       // Fetch from remote with category filter
-      final allProducts = await remoteDataSource.getAllProducts();
+      // For category filter, we can still get all products from first page
+      // or better, add category filter to backend
+      final result = await remoteDataSource.getAllProducts(limit: 1000);
+      final products = result['products'] as List<Product>;
       final filteredProducts =
-          allProducts.where((p) => p.categoryId == categoryId).toList();
+          products.where((p) => p.categoryId == categoryId).toList();
 
       return Right(filteredProducts);
     } on NetworkException catch (e) {
@@ -154,6 +170,31 @@ class ProductRepositoryImpl implements ProductRepository {
       // Get low stock products from remote
       final products = await remoteDataSource.getLowStockProducts();
       return Right(products);
+    } on NetworkException catch (e) {
+      return Left(NetworkFailure(message: e.message));
+    } on ServerException catch (e) {
+      return Left(ServerFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, Map<String, dynamic>>> getLowStockProductsPaginated({
+    int page = 1,
+    int limit = 20,
+    String search = '',
+  }) async {
+    try {
+      await _ensureOnline();
+
+      // Get paginated low stock products from remote
+      final result = await remoteDataSource.getLowStockProductsPaginated(
+        page: page,
+        limit: limit,
+        search: search,
+      );
+      return Right(result);
     } on NetworkException catch (e) {
       return Left(NetworkFailure(message: e.message));
     } on ServerException catch (e) {
@@ -242,6 +283,46 @@ class ProductRepositoryImpl implements ProductRepository {
 
       print('✅ Stock updated for product $id: $quantity ($operation)');
       return const Right(null);
+    } on NetworkException catch (e) {
+      return Left(NetworkFailure(message: e.message));
+    } on ServerException catch (e) {
+      return Left(ServerFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, Map<String, dynamic>>> importProducts(
+    String filePath,
+  ) async {
+    try {
+      await _ensureOnline();
+
+      // Import products from file
+      final result = await remoteDataSource.importProducts(filePath);
+
+      print('✅ Products imported: ${result['imported']} products');
+      return Right(result);
+    } on NetworkException catch (e) {
+      return Left(NetworkFailure(message: e.message));
+    } on ServerException catch (e) {
+      return Left(ServerFailure(message: e.message));
+    } catch (e) {
+      return Left(UnknownFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, String>> downloadImportTemplate() async {
+    try {
+      await _ensureOnline();
+
+      // Download template file
+      final filePath = await remoteDataSource.downloadImportTemplate();
+
+      print('✅ Template downloaded: $filePath');
+      return Right(filePath);
     } on NetworkException catch (e) {
       return Left(NetworkFailure(message: e.message));
     } on ServerException catch (e) {

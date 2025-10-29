@@ -1,6 +1,16 @@
 import express from "express";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { authenticateToken, authorize } from "../middleware/auth.js";
+import {
+  getAllBranches,
+  getBranchById,
+  getCurrentBranch,
+  searchBranches,
+  createBranch,
+  updateBranch,
+  deleteBranch,
+  generateBranchCode,
+} from "../controllers/branchController.js";
 
 const router = express.Router();
 
@@ -9,13 +19,32 @@ const router = express.Router();
  * @desc    Get all branches
  * @access  Private
  */
+router.get("/", authenticateToken, asyncHandler(getAllBranches));
+
+/**
+ * @route   GET /api/v2/branches/search
+ * @desc    Search branches
+ * @access  Private
+ */
+router.get("/search", authenticateToken, asyncHandler(searchBranches));
+
+/**
+ * @route   GET /api/v2/branches/current
+ * @desc    Get current user's branch
+ * @access  Private
+ */
+router.get("/current", authenticateToken, asyncHandler(getCurrentBranch));
+
+/**
+ * @route   GET /api/v2/branches/generate-code
+ * @desc    Generate branch code
+ * @access  Private (Super Admin)
+ */
 router.get(
-  "/",
+  "/generate-code",
   authenticateToken,
-  asyncHandler(async (req, res) => {
-    // TODO: Implement controller
-    res.json({ message: "Get all branches" });
-  })
+  authorize("super_admin"),
+  asyncHandler(generateBranchCode)
 );
 
 /**
@@ -23,13 +52,7 @@ router.get(
  * @desc    Get branch by ID
  * @access  Private
  */
-router.get(
-  "/:id",
-  authenticateToken,
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Get branch by ID" });
-  })
-);
+router.get("/:id", authenticateToken, asyncHandler(getBranchById));
 
 /**
  * @route   POST /api/v2/branches
@@ -40,9 +63,7 @@ router.post(
   "/",
   authenticateToken,
   authorize("super_admin"),
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Create branch" });
-  })
+  asyncHandler(createBranch)
 );
 
 /**
@@ -54,9 +75,7 @@ router.put(
   "/:id",
   authenticateToken,
   authorize("super_admin"),
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Update branch" });
-  })
+  asyncHandler(updateBranch)
 );
 
 /**
@@ -68,9 +87,7 @@ router.delete(
   "/:id",
   authenticateToken,
   authorize("super_admin"),
-  asyncHandler(async (req, res) => {
-    res.json({ message: "Delete branch" });
-  })
+  asyncHandler(deleteBranch)
 );
 
 export default router;

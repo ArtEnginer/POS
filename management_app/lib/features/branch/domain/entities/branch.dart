@@ -33,21 +33,29 @@ class Branch extends Equatable {
 
   factory Branch.fromJson(Map<String, dynamic> json) {
     return Branch(
-      id: json['id'].toString(),
-      code: json['code'],
-      name: json['name'],
-      address: json['address'],
-      phone: json['phone'],
-      email: json['email'],
-      type: json['type'],
+      id: json['id']?.toString() ?? '',
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString(),
+      type: json['type']?.toString() ?? 'BRANCH',
       isActive: json['is_active'] ?? json['isActive'] ?? true,
       parentBranchId:
           json['parent_branch_id']?.toString() ??
           json['parentBranchId']?.toString(),
-      apiKey: json['api_key'] ?? json['apiKey'],
-      settings: json['settings'],
-      createdAt: DateTime.parse(json['created_at'] ?? json['createdAt']),
-      updatedAt: DateTime.parse(json['updated_at'] ?? json['updatedAt']),
+      apiKey: json['api_key']?.toString() ?? json['apiKey']?.toString(),
+      settings: json['settings'] is String ? null : json['settings'],
+      createdAt: DateTime.parse(
+        json['created_at'] ??
+            json['createdAt'] ??
+            DateTime.now().toIso8601String(),
+      ),
+      updatedAt: DateTime.parse(
+        json['updated_at'] ??
+            json['updatedAt'] ??
+            DateTime.now().toIso8601String(),
+      ),
     );
   }
 

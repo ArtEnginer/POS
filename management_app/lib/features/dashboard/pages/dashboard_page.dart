@@ -7,7 +7,7 @@ import '../../product/presentation/bloc/product_bloc.dart';
 import '../../product/presentation/pages/product_list_page.dart';
 import '../../purchase/presentation/bloc/purchase_bloc.dart';
 import '../../purchase/presentation/pages/purchase_list_page.dart';
-import '../../purchase/presentation/pages/receiving_list_page.dart';
+import '../../receiving/presentation/pages/receiving_list_page.dart';
 import '../../sales/presentation/bloc/sale_bloc.dart';
 import '../../sales/presentation/pages/pos_page.dart';
 import '../../sales/presentation/pages/sale_list_page.dart';
@@ -41,7 +41,7 @@ class _DashboardPageState extends State<DashboardPage> {
         ],
         child: const POSPage(),
       ),
-      const ProductListPage(),
+      const ProductListPageOptimized(), // Optimized for 50K+ products
       BlocProvider(
         create: (_) => sl<CustomerBloc>(),
         child: const CustomerListPage(),

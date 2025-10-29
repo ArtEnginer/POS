@@ -537,100 +537,120 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+          // Product Name Row
+          Row(
+            children: [
+              Expanded(
+                child: Text(
                   item.productName,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Editable Price Field
-                SizedBox(
-                  width: 180,
-                  child: TextFormField(
-                    initialValue: item.price.toStringAsFixed(0),
-                    decoration: InputDecoration(
-                      labelText: 'Harga Beli',
-                      prefixText: 'Rp ',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                onPressed: () => _removeFromCart(index),
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(4),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Price, Quantity, and Subtotal Row
+          Row(
+            children: [
+              // Price Field
+              Flexible(
+                flex: 2,
+                child: TextFormField(
+                  initialValue: item.price.toStringAsFixed(0),
+                  decoration: InputDecoration(
+                    labelText: 'Harga Beli',
+                    prefixText: 'Rp ',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 13),
+                  onChanged: (value) {
+                    final newPrice = double.tryParse(value) ?? item.price;
+                    setState(() {
+                      item.price = newPrice;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Quantity Control
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove, size: 16),
+                      onPressed:
+                          () => _updateQuantity(index, item.quantity - 1),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
                       ),
                     ),
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 13),
-                    onChanged: (value) {
-                      final newPrice = double.tryParse(value) ?? item.price;
-                      setState(() {
-                        item.price = newPrice;
-                      });
-                    },
-                  ),
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 30),
+                      alignment: Alignment.center,
+                      child: Text(
+                        item.quantity.toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add, size: 16),
+                      onPressed:
+                          () => _updateQuantity(index, item.quantity + 1),
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Quantity control
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove, size: 18),
-                  onPressed: () => _updateQuantity(index, item.quantity - 1),
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(),
-                ),
-                Container(
-                  width: 40,
-                  alignment: Alignment.center,
-                  child: Text(
-                    item.quantity.toString(),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 18),
-                  onPressed: () => _updateQuantity(index, item.quantity + 1),
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          // Subtotal
-          SizedBox(
-            width: 100,
-            child: Text(
-              currencyFormat.format(item.quantity * item.price),
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
               ),
-              textAlign: TextAlign.right,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () => _removeFromCart(index),
+              const SizedBox(width: 8),
+              // Subtotal
+              Flexible(
+                flex: 1,
+                child: Text(
+                  currencyFormat.format(item.quantity * item.price),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                    fontSize: 13,
+                  ),
+                  textAlign: TextAlign.right,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -765,20 +785,44 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
                   decoration: const InputDecoration(
                     labelText: 'Status PO',
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
+                  isExpanded: true,
                   items: const [
-                    DropdownMenuItem(value: 'draft', child: Text('Draft')),
+                    DropdownMenuItem(
+                      value: 'draft',
+                      child: Text(
+                        'Draft',
+                        style: TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                     DropdownMenuItem(
                       value: 'ordered',
-                      child: Text('Ordered - Dikirim ke Supplier'),
+                      child: Text(
+                        'Ordered',
+                        style: TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'approved',
-                      child: Text('Approved - Disetujui untuk Receiving'),
+                      child: Text(
+                        'Approved',
+                        style: TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'partial',
-                      child: Text('Partial - Sebagian Diterima'),
+                      child: Text(
+                        'Partial',
+                        style: TextStyle(fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                   onChanged: (value) {
@@ -787,75 +831,25 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
                     });
                   },
                 ),
+                const SizedBox(height: 8),
+                // Status Info Box
                 if (_status == 'ordered')
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.info_outline, size: 16, color: Colors.blue),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'PO sudah dikirim ke supplier. Stok akan bertambah saat proses Receiving.',
-                            style: TextStyle(fontSize: 12, color: Colors.blue),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildStatusInfo(
+                    'PO sudah dikirim ke supplier. Stok akan bertambah saat proses Receiving.',
+                    Colors.blue,
+                    Icons.info_outline,
                   ),
                 if (_status == 'approved')
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 16,
-                          color: Colors.green,
-                        ),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'PO sudah disetujui dan siap untuk proses receiving barang.',
-                            style: TextStyle(fontSize: 12, color: Colors.green),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildStatusInfo(
+                    'PO sudah disetujui dan siap untuk proses receiving barang.',
+                    Colors.green,
+                    Icons.check_circle_outline,
                   ),
                 if (_status == 'partial')
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.schedule, size: 16, color: Colors.orange),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'PO sebagian barang sudah diterima, menunggu sisa barang',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _buildStatusInfo(
+                    'PO sebagian barang sudah diterima, menunggu sisa barang',
+                    Colors.orange,
+                    Icons.schedule,
                   ),
               ],
             ),
@@ -882,6 +876,26 @@ class _PurchaseFormViewState extends State<_PurchaseFormView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStatusInfo(String message, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: TextStyle(fontSize: 11, color: color)),
+          ),
+        ],
+      ),
     );
   }
 

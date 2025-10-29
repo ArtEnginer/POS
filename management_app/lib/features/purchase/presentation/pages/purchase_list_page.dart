@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_text_styles.dart';
 import '../../../../injection_container.dart';
 import '../../domain/entities/purchase.dart';
 import '../bloc/purchase_bloc.dart';
@@ -10,6 +11,7 @@ import '../bloc/purchase_state.dart';
 import 'purchase_form_page.dart';
 import 'purchase_detail_page.dart';
 
+/// Optimized Purchase List Page with DataTable and Pagination
 class PurchaseListPage extends StatelessWidget {
   const PurchaseListPage({super.key});
 
@@ -31,12 +33,46 @@ class _PurchaseListView extends StatefulWidget {
 
 class _PurchaseListViewState extends State<_PurchaseListView> {
   final TextEditingController _searchController = TextEditingController();
+
+  // Client-side Pagination State
+  int _currentPage = 1;
+  int _rowsPerPage = 10;
+  String? _searchQuery;
   DateTimeRange? _dateRange;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onPageChanged(int newPage) {
+    setState(() {
+      _currentPage = newPage;
+    });
+  }
+
+  void _onRowsPerPageChanged(int newRowsPerPage) {
+    setState(() {
+      _rowsPerPage = newRowsPerPage;
+      _currentPage = 1;
+    });
+  }
+
+  void _onSearch(String query) {
+    setState(() {
+      _searchQuery = query.isEmpty ? null : query;
+      _currentPage = 1;
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_searchQuery == (query.isEmpty ? null : query)) {
+        if (query.isEmpty) {
+          context.read<PurchaseBloc>().add(const LoadPurchases());
+        } else {
+          context.read<PurchaseBloc>().add(SearchPurchases(query));
+        }
+      }
+    });
   }
 
   void _showDateRangePicker() async {
@@ -83,7 +119,37 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Data Pembelian'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: AppColors.textWhite,
         actions: [
+          // Tombol Tambah Pembelian
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PurchaseFormPage()),
+                );
+                if (result == true && mounted) {
+                  context.read<PurchaseBloc>().add(const LoadPurchases());
+                }
+              },
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text('Pembelian Baru'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.secondary,
+                foregroundColor: AppColors.textWhite,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.date_range),
             onPressed: _showDateRangePicker,
@@ -95,6 +161,12 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
               onPressed: _clearFilters,
               tooltip: 'Hapus Filter',
             ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed:
+                () => context.read<PurchaseBloc>().add(const LoadPurchases()),
+            tooltip: 'Refresh',
+          ),
         ],
       ),
       body: Column(
@@ -108,7 +180,8 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(state.message),
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.success,
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                   context.read<PurchaseBloc>().add(const LoadPurchases());
@@ -116,7 +189,8 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(state.message),
-                      backgroundColor: Colors.red,
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                 }
@@ -128,7 +202,13 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
                   if (state.purchases.isEmpty) {
                     return _buildEmptyState();
                   }
-                  return _buildPurchaseTable(state.purchases);
+                  return RefreshIndicator(
+                    onRefresh:
+                        () async => context.read<PurchaseBloc>().add(
+                          const LoadPurchases(),
+                        ),
+                    child: _buildPurchaseTable(state),
+                  );
                 } else if (state is PurchaseError) {
                   return _buildErrorState(state.message);
                 }
@@ -138,30 +218,20 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'add_purchase_fab',
-        onPressed: () async {
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const PurchaseFormPage()),
-          );
-          if (result == true && mounted) {
-            context.read<PurchaseBloc>().add(const LoadPurchases());
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Pembelian Baru'),
-      ),
     );
   }
 
   Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: AppColors.surface,
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
           hintText: 'Cari nomor pembelian atau supplier...',
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textHint,
+          ),
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
@@ -169,19 +239,22 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       _searchController.clear();
-                      context.read<PurchaseBloc>().add(const LoadPurchases());
+                      _onSearch('');
                     },
                   )
                   : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          filled: true,
+          fillColor: AppColors.background,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
         ),
-        onChanged: (value) {
-          if (value.isEmpty) {
-            context.read<PurchaseBloc>().add(const LoadPurchases());
-          } else {
-            context.read<PurchaseBloc>().add(SearchPurchases(value));
-          }
-        },
+        onChanged: _onSearch,
       ),
     );
   }
@@ -200,176 +273,406 @@ class _PurchaseListViewState extends State<_PurchaseListView> {
     );
   }
 
-  Widget _buildPurchaseTable(List<Purchase> purchases) {
+  Widget _buildPurchaseTable(PurchaseLoaded state) {
+    final allPurchases = state.purchases;
+
+    // Client-side pagination
+    final startIndex = (_currentPage - 1) * _rowsPerPage;
+    final endIndex = (startIndex + _rowsPerPage).clamp(0, allPurchases.length);
+    final purchases = allPurchases.sublist(
+      startIndex.clamp(0, allPurchases.length),
+      endIndex,
+    );
+
+    final totalItems = allPurchases.length;
+    final totalPages = (totalItems / _rowsPerPage).ceil();
+
     final currencyFormat = NumberFormat.currency(
       locale: 'id_ID',
       symbol: 'Rp ',
       decimalDigits: 0,
     );
-    final dateFormat = DateFormat('dd/MM/yyyy HH:mm', 'id_ID');
+    final dateFormat = DateFormat('dd/MM/yyyy', 'id_ID');
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: MaterialStateProperty.all(
-            AppColors.primary.withOpacity(0.1),
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
-          columns: const [
-            DataColumn(
-              label: Text(
-                'No. Pembelian',
-                style: TextStyle(fontWeight: FontWeight.bold),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Table Header Info
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.05),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
               ),
             ),
-            DataColumn(
-              label: Text(
-                'Tanggal',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Supplier',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Total Item',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Total Harga',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Status',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            DataColumn(
-              label: Text(
-                'Aksi',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-          rows:
-              purchases.map((purchase) {
-                return DataRow(
-                  cells: [
-                    DataCell(
-                      Text(
-                        purchase.purchaseNumber,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
+            child: Row(
+              children: [
+                Icon(Icons.table_chart, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Daftar Pembelian',
+                  style: AppTextStyles.h6.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$totalItems Pembelian',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textWhite,
+                      fontWeight: FontWeight.bold,
                     ),
-                    DataCell(Text(dateFormat.format(purchase.purchaseDate))),
-                    DataCell(
-                      Text(
-                        purchase.supplierName ?? '-',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Scrollable Table
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: MediaQuery.of(context).size.width - 32,
+                ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: DataTable(
+                    headingRowHeight: 56,
+                    dataRowMinHeight: 48,
+                    dataRowMaxHeight: 72,
+                    horizontalMargin: 16,
+                    columnSpacing: 20,
+                    headingRowColor: WidgetStateProperty.all(
+                      AppColors.primary.withOpacity(0.08),
                     ),
-                    DataCell(
-                      Center(
-                        child: Text(
-                          purchase.items.length.toString(),
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        currencyFormat.format(purchase.totalAmount),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                    DataCell(_buildStatusChip(purchase.status)),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.visibility, size: 20),
-                            onPressed: () => _viewDetail(purchase),
-                            tooltip: 'Lihat Detail',
+                    columns: [
+                      DataColumn(
+                        label: Text(
+                          'No. Pembelian',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
                           ),
-                          // Edit button - only for draft, ordered, partial
-                          if (_canEditPurchase(purchase.status))
-                            IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () => _editPurchase(purchase),
-                              tooltip: 'Edit',
-                            ),
-                          // Delete button - only for draft, ordered, partial
-                          if (_canDeletePurchase(purchase.status))
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete,
-                                size: 20,
-                                color: Colors.red,
-                              ),
-                              onPressed: () => _confirmDelete(purchase),
-                              tooltip: 'Hapus',
-                            ),
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }).toList(),
+                      DataColumn(
+                        label: Text(
+                          'Tanggal',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Supplier',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Jumlah Item',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        numeric: true,
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Total',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        numeric: true,
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Status',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      DataColumn(
+                        label: Text(
+                          'Aksi',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                    rows:
+                        purchases.map((purchase) {
+                          return DataRow(
+                            cells: [
+                              // No. Pembelian
+                              DataCell(
+                                Text(
+                                  purchase.purchaseNumber,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                onTap: () => _viewDetail(purchase),
+                              ),
+                              // Tanggal
+                              DataCell(
+                                Text(
+                                  dateFormat.format(purchase.purchaseDate),
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              // Supplier
+                              DataCell(
+                                Container(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 200,
+                                  ),
+                                  child: Text(
+                                    purchase.supplierName ?? '-',
+                                    style: AppTextStyles.bodyMedium,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                  ),
+                                ),
+                              ),
+                              // Jumlah Item
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.info.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${purchase.items.length}',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.info,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // Total
+                              DataCell(
+                                Text(
+                                  currencyFormat.format(purchase.totalAmount),
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                              // Status
+                              DataCell(_buildStatusBadge(purchase.status)),
+                              // Aksi
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.visibility,
+                                        size: 18,
+                                      ),
+                                      onPressed: () => _viewDetail(purchase),
+                                      tooltip: 'Lihat Detail',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    if (_canEditPurchase(purchase.status))
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 18),
+                                        onPressed:
+                                            () => _editPurchase(purchase),
+                                        tooltip: 'Edit',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    if (_canDeletePurchase(purchase.status))
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.delete,
+                                          size: 18,
+                                          color: AppColors.error,
+                                        ),
+                                        onPressed:
+                                            () => _confirmDelete(purchase),
+                                        tooltip: 'Hapus',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Pagination Controls
+          _buildPaginationControls(totalPages, totalItems),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color statusColor;
+    String label;
+
+    switch (status.toUpperCase()) {
+      case 'RECEIVED':
+        statusColor = Colors.green;
+        label = 'Received';
+        break;
+      case 'APPROVED':
+        statusColor = Colors.blue;
+        label = 'Approved';
+        break;
+      case 'PENDING':
+        statusColor = Colors.orange;
+        label = 'Pending';
+        break;
+      case 'DRAFT':
+        statusColor = Colors.grey;
+        label = 'Draft';
+        break;
+      case 'CANCELLED':
+        statusColor = Colors.red;
+        label = 'Batal';
+        break;
+      default:
+        statusColor = Colors.grey;
+        label = status;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor),
+      ),
+      child: Text(
+        label,
+        style: AppTextStyles.bodySmall.copyWith(
+          color: statusColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
         ),
       ),
     );
   }
 
-  Widget _buildStatusChip(String status) {
-    Color color;
-    String label;
-
-    switch (status) {
-      case 'RECEIVED':
-        color = Colors.green;
-        label = 'Received';
-        break;
-      case 'APPROVED':
-        color = Colors.blue;
-        label = 'Approved';
-        break;
-      case 'PENDING':
-        color = Colors.orange;
-        label = 'Pending';
-        break;
-      case 'DRAFT':
-        color = Colors.grey;
-        label = 'Draft';
-        break;
-      case 'CANCELLED':
-        color = Colors.red;
-        label = 'Batal';
-        break;
-      default:
-        color = Colors.grey;
-        label = status;
-    }
-
-    return Chip(
-      label: Text(
-        label,
-        style: const TextStyle(color: Colors.white, fontSize: 12),
+  Widget _buildPaginationControls(int totalPages, int totalItems) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(12),
+          bottomRight: Radius.circular(12),
+        ),
       ),
-      backgroundColor: color,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          // Rows per page selector
+          Text('Baris per halaman:', style: AppTextStyles.bodySmall),
+          const SizedBox(width: 8),
+          DropdownButton<int>(
+            value: _rowsPerPage,
+            underline: const SizedBox(),
+            items:
+                [5, 10, 25, 50, 100].map((int value) {
+                  return DropdownMenuItem<int>(
+                    value: value,
+                    child: Text(value.toString()),
+                  );
+                }).toList(),
+            onChanged: (int? newValue) {
+              if (newValue != null) {
+                _onRowsPerPageChanged(newValue);
+              }
+            },
+          ),
+          const SizedBox(width: 24),
+          // Page info
+          Text(
+            'Halaman $_currentPage dari $totalPages ($totalItems total)',
+            style: AppTextStyles.bodySmall,
+          ),
+          const Spacer(),
+          // Navigation buttons
+          IconButton(
+            icon: const Icon(Icons.first_page),
+            onPressed: _currentPage > 1 ? () => _onPageChanged(1) : null,
+            tooltip: 'Halaman Pertama',
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed:
+                _currentPage > 1
+                    ? () => _onPageChanged(_currentPage - 1)
+                    : null,
+            tooltip: 'Halaman Sebelumnya',
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed:
+                _currentPage < totalPages
+                    ? () => _onPageChanged(_currentPage + 1)
+                    : null,
+            tooltip: 'Halaman Berikutnya',
+          ),
+          IconButton(
+            icon: const Icon(Icons.last_page),
+            onPressed:
+                _currentPage < totalPages
+                    ? () => _onPageChanged(totalPages)
+                    : null,
+            tooltip: 'Halaman Terakhir',
+          ),
+        ],
+      ),
     );
   }
 

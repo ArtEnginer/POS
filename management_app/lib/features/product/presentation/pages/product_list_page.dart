@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../injection_container.dart';
@@ -9,30 +11,35 @@ import '../bloc/product_event.dart' as event;
 import '../bloc/product_state.dart';
 import 'product_detail_page.dart';
 import 'product_form_page.dart';
+import 'low_stock_products_page.dart';
 
-class ProductListPage extends StatefulWidget {
-  const ProductListPage({super.key});
+/// Optimized Product List Page with Server-Side Pagination
+/// Designed for handling 50,000+ products efficiently
+class ProductListPageOptimized extends StatefulWidget {
+  const ProductListPageOptimized({super.key});
 
   @override
-  State<ProductListPage> createState() => _ProductListPageState();
+  State<ProductListPageOptimized> createState() =>
+      _ProductListPageOptimizedState();
 }
 
-class _ProductListPageState extends State<ProductListPage> {
+class _ProductListPageOptimizedState extends State<ProductListPageOptimized> {
   final TextEditingController _searchController = TextEditingController();
   late final ProductBloc _productBloc;
-  String _searchQuery = '';
-  bool _showLowStock = false;
 
-  // Pagination
-  int _currentPage = 0;
-  int _rowsPerPage = 10;
-  int _sortColumnIndex = 0;
+  // Server-side Pagination State
+  int _currentPage = 1; // Server pages start from 1
+  int _rowsPerPage = 5; // Default 5 items per page
+  String? _searchQuery;
+  String? _sortBy;
   bool _sortAscending = true;
+  bool _showLowStock = false;
 
   @override
   void initState() {
     super.initState();
-    _productBloc = sl<ProductBloc>()..add(const event.LoadProducts());
+    _productBloc = sl<ProductBloc>();
+    _loadProducts();
   }
 
   @override
@@ -42,90 +49,57 @@ class _ProductListPageState extends State<ProductListPage> {
     super.dispose();
   }
 
-  void _sort<T>(
-    Comparable<T> Function(Product p) getField,
-    int columnIndex,
-    bool ascending,
-  ) {
+  void _loadProducts() {
+    if (_showLowStock) {
+      _productBloc.add(const event.LoadLowStockProducts());
+    } else {
+      _productBloc.add(
+        event.LoadProducts(
+          page: _currentPage,
+          limit: _rowsPerPage,
+          search: _searchQuery,
+          sortBy: _sortBy,
+          ascending: _sortAscending,
+        ),
+      );
+    }
+  }
+
+  void _onPageChanged(int newPage) {
     setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
+      _currentPage = newPage;
     });
+    _loadProducts();
   }
 
-  List<Product> _getSortedProducts(List<Product> products) {
-    final sorted = List<Product>.from(products);
-
-    switch (_sortColumnIndex) {
-      case 0: // sku
-        sorted.sort(
-          (a, b) =>
-              _sortAscending ? a.sku.compareTo(b.sku) : b.sku.compareTo(a.sku),
-        );
-        break;
-      case 1: // Barcode
-        sorted.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.barcode.compareTo(b.barcode)
-                  : b.barcode.compareTo(a.barcode),
-        );
-        break;
-      case 2: // Nama
-        sorted.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.name.compareTo(b.name)
-                  : b.name.compareTo(a.name),
-        );
-        break;
-      case 3: // Kategori
-        sorted.sort((a, b) {
-          final aCategory = a.categoryName ?? '';
-          final bCategory = b.categoryName ?? '';
-          return _sortAscending
-              ? aCategory.compareTo(bCategory)
-              : bCategory.compareTo(aCategory);
-        });
-        break;
-      case 4: // Harga Beli
-        sorted.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.costPrice.compareTo(b.costPrice)
-                  : b.costPrice.compareTo(a.costPrice),
-        );
-        break;
-      case 5: // Harga Jual
-        sorted.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.sellingPrice.compareTo(b.sellingPrice)
-                  : b.sellingPrice.compareTo(a.sellingPrice),
-        );
-        break;
-      case 6: // Stok
-        sorted.sort(
-          (a, b) =>
-              _sortAscending
-                  ? a.stock.compareTo(b.stock)
-                  : b.stock.compareTo(a.stock),
-        );
-        break;
-    }
-
-    return sorted;
+  void _onRowsPerPageChanged(int newRowsPerPage) {
+    setState(() {
+      _rowsPerPage = newRowsPerPage;
+      _currentPage = 1; // Reset to first page
+    });
+    _loadProducts();
   }
 
-  List<Product> _getPaginatedProducts(List<Product> products) {
-    final startIndex = _currentPage * _rowsPerPage;
-    final endIndex = (startIndex + _rowsPerPage).clamp(0, products.length);
+  void _onSort(String sortBy, bool ascending) {
+    setState(() {
+      _sortBy = sortBy;
+      _sortAscending = ascending;
+      _currentPage = 1; // Reset to first page when sorting
+    });
+    _loadProducts();
+  }
 
-    if (startIndex >= products.length) {
-      return [];
-    }
-
-    return products.sublist(startIndex, endIndex);
+  void _onSearch(String query) {
+    setState(() {
+      _searchQuery = query.isEmpty ? null : query;
+      _currentPage = 1; // Reset to first page when searching
+    });
+    // Debounce search
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_searchQuery == (query.isEmpty ? null : query)) {
+        _loadProducts();
+      }
+    });
   }
 
   @override
@@ -139,34 +113,59 @@ class _ProductListPageState extends State<ProductListPage> {
           foregroundColor: AppColors.textWhite,
           actions: [
             IconButton(
-              icon: Icon(
-                _showLowStock ? Icons.inventory : Icons.inventory_2_outlined,
-                color: _showLowStock ? AppColors.warning : AppColors.textWhite,
-              ),
+              icon: const Icon(Icons.inventory_2_outlined),
               onPressed: () {
-                setState(() {
-                  _showLowStock = !_showLowStock;
-                  _currentPage = 0; // Reset to first page
-                });
-                if (_showLowStock) {
-                  _productBloc.add(const event.LoadLowStockProducts());
-                } else {
-                  _productBloc.add(const event.LoadProducts());
-                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LowStockProductsPage(),
+                  ),
+                );
               },
-              tooltip: _showLowStock ? 'Tampilkan Semua' : 'Stok Rendah',
+              tooltip: 'Stok Minimum',
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: () {
-                _productBloc.add(const event.LoadProducts());
-              },
+              onPressed: () => _loadProducts(),
               tooltip: 'Refresh',
             ),
             IconButton(
               icon: const Icon(Icons.add),
               onPressed: () => _navigateToForm(context, null),
               tooltip: 'Tambah Produk',
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) {
+                if (value == 'import') {
+                  _handleImport();
+                } else if (value == 'template') {
+                  _handleDownloadTemplate();
+                }
+              },
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: 'import',
+                      child: Row(
+                        children: [
+                          Icon(Icons.upload_file, size: 20),
+                          SizedBox(width: 12),
+                          Text('Import Produk'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'template',
+                      child: Row(
+                        children: [
+                          Icon(Icons.download, size: 20),
+                          SizedBox(width: 12),
+                          Text('Download Template'),
+                        ],
+                      ),
+                    ),
+                  ],
             ),
           ],
         ),
@@ -179,27 +178,18 @@ class _ProductListPageState extends State<ProductListPage> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Cari produk...',
+                  hintText: 'Cari produk (SKU, Barcode, Nama)...',
                   hintStyle: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textHint,
                   ),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    color: AppColors.textSecondary,
-                  ),
+                  prefixIcon: const Icon(Icons.search),
                   suffixIcon:
-                      _searchQuery.isNotEmpty
+                      _searchController.text.isNotEmpty
                           ? IconButton(
-                            icon: const Icon(
-                              Icons.clear,
-                              color: AppColors.textSecondary,
-                            ),
+                            icon: const Icon(Icons.clear),
                             onPressed: () {
                               _searchController.clear();
-                              setState(() {
-                                _searchQuery = '';
-                              });
-                              _productBloc.add(const event.LoadProducts());
+                              _onSearch('');
                             },
                           )
                           : null,
@@ -211,20 +201,10 @@ class _ProductListPageState extends State<ProductListPage> {
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
-                    vertical: 12,
+                    vertical: 14,
                   ),
                 ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                    _currentPage = 0; // Reset to first page on search
-                  });
-                  if (value.isEmpty) {
-                    _productBloc.add(const event.LoadProducts());
-                  } else {
-                    _productBloc.add(event.SearchProducts(value));
-                  }
-                },
+                onChanged: _onSearch,
               ),
             ),
             // Product List
@@ -247,8 +227,18 @@ class _ProductListPageState extends State<ProductListPage> {
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
-                    // Reload products after operation
-                    _productBloc.add(const event.LoadProducts());
+                    _loadProducts();
+                  } else if (state is ProductImportSuccess) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(state.message),
+                        backgroundColor: AppColors.success,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    _showImportResultDialog(context, state.details);
+                    _loadProducts();
                   }
                 },
                 builder: (context, state) {
@@ -259,10 +249,8 @@ class _ProductListPageState extends State<ProductListPage> {
                       return _buildEmptyState();
                     }
                     return RefreshIndicator(
-                      onRefresh: () async {
-                        _productBloc.add(const event.LoadProducts());
-                      },
-                      child: _buildProductTable(state.products),
+                      onRefresh: () async => _loadProducts(),
+                      child: _buildProductTable(state),
                     );
                   } else if (state is ProductError) {
                     return _buildErrorState(state.message);
@@ -277,10 +265,9 @@ class _ProductListPageState extends State<ProductListPage> {
     );
   }
 
-  Widget _buildProductTable(List<Product> products) {
-    final sortedProducts = _getSortedProducts(products);
-    final paginatedProducts = _getPaginatedProducts(sortedProducts);
-    final totalPages = (sortedProducts.length / _rowsPerPage).ceil();
+  Widget _buildProductTable(ProductLoaded state) {
+    final products = state.products;
+    final totalItems = state.totalItems;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -329,7 +316,7 @@ class _ProductListPageState extends State<ProductListPage> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${sortedProducts.length} Produk',
+                    '$totalItems Produk',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textWhite,
                       fontWeight: FontWeight.bold,
@@ -339,7 +326,7 @@ class _ProductListPageState extends State<ProductListPage> {
               ],
             ),
           ),
-          // Scrollable Table
+          // Scrollable Table - Full Width with Horizontal Scroll
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -347,538 +334,378 @@ class _ProductListPageState extends State<ProductListPage> {
                 constraints: BoxConstraints(
                   minWidth: MediaQuery.of(context).size.width - 32,
                 ),
-                child: DataTable(
-                  headingRowHeight: 56,
-                  dataRowMinHeight: 48,
-                  dataRowMaxHeight: 60,
-                  horizontalMargin: 16,
-                  columnSpacing: 24,
-                  sortColumnIndex: _sortColumnIndex,
-                  sortAscending: _sortAscending,
-                  headingRowColor: WidgetStateProperty.all(
-                    AppColors.primary.withOpacity(0.08),
-                  ),
-                  columns: [
-                    DataColumn(
-                      label: const Text(
-                        'sku',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: DataTable(
+                    headingRowHeight: 56,
+                    dataRowMinHeight: 48,
+                    dataRowMaxHeight: 60,
+                    horizontalMargin: 16,
+                    columnSpacing: 24,
+                    headingRowColor: WidgetStateProperty.all(
+                      AppColors.primary.withOpacity(0.08),
+                    ),
+                    columns: [
+                      DataColumn(
+                        label: const Text(
+                          'SKU',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        onSort: (_, ascending) => _onSort('sku', ascending),
+                      ),
+                      DataColumn(
+                        label: const Text(
+                          'Barcode',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        onSort: (_, ascending) => _onSort('barcode', ascending),
+                      ),
+                      DataColumn(
+                        label: const Text(
+                          'Nama Produk',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        onSort: (_, ascending) => _onSort('name', ascending),
+                      ),
+                      const DataColumn(
+                        label: Text(
+                          'Kategori',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                      onSort: (columnIndex, ascending) {
-                        _sort<String>((p) => p.sku, columnIndex, ascending);
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Barcode',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                      DataColumn(
+                        label: const Text(
+                          'Harga Beli',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        numeric: true,
+                        onSort:
+                            (_, ascending) => _onSort('cost_price', ascending),
+                      ),
+                      DataColumn(
+                        label: const Text(
+                          'Harga Jual',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        numeric: true,
+                        onSort:
+                            (_, ascending) =>
+                                _onSort('selling_price', ascending),
+                      ),
+                      const DataColumn(
+                        label: Text(
+                          'Stok',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        numeric: true,
+                      ),
+                      const DataColumn(
+                        label: Text(
+                          'Aksi',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                      onSort: (columnIndex, ascending) {
-                        _sort<String>((p) => p.barcode, columnIndex, ascending);
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Nama Produk',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      onSort: (columnIndex, ascending) {
-                        _sort<String>((p) => p.name, columnIndex, ascending);
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Kategori',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      onSort: (columnIndex, ascending) {
-                        _sort<String>(
-                          (p) => p.categoryName ?? '',
-                          columnIndex,
-                          ascending,
-                        );
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Harga Beli',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      numeric: true,
-                      onSort: (columnIndex, ascending) {
-                        _sort<num>((p) => p.costPrice, columnIndex, ascending);
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Harga Jual',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      numeric: true,
-                      onSort: (columnIndex, ascending) {
-                        _sort<num>(
-                          (p) => p.sellingPrice,
-                          columnIndex,
-                          ascending,
-                        );
-                      },
-                    ),
-                    DataColumn(
-                      label: const Text(
-                        'Stok',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                      numeric: true,
-                      onSort: (columnIndex, ascending) {
-                        _sort<num>((p) => p.stock, columnIndex, ascending);
-                      },
-                    ),
-                    const DataColumn(
-                      label: Text(
-                        'Satuan',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const DataColumn(
-                      label: Text(
-                        'Status',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const DataColumn(
-                      label: Text(
-                        'Aksi',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                  rows:
-                      paginatedProducts.map((product) {
-                        final isLowStock = product.stock <= product.minStock;
-                        return DataRow(
-                          color: WidgetStateProperty.resolveWith<Color?>((
-                            Set<WidgetState> states,
-                          ) {
-                            if (states.contains(WidgetState.hovered)) {
-                              return AppColors.primary.withOpacity(0.05);
-                            }
-                            if (isLowStock) {
-                              return AppColors.error.withOpacity(0.08);
-                            }
-                            return null;
-                          }),
-                          cells: [
-                            DataCell(
-                              Text(
-                                product.sku,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontSize: 13,
+                    ],
+                    rows:
+                        products.map((product) {
+                          final isLowStock = product.stock <= product.minStock;
+                          return DataRow(
+                            color: WidgetStateProperty.resolveWith<Color?>((
+                              states,
+                            ) {
+                              if (states.contains(WidgetState.hovered)) {
+                                return AppColors.primary.withOpacity(0.05);
+                              }
+                              if (isLowStock) {
+                                return AppColors.error.withOpacity(0.08);
+                              }
+                              return null;
+                            }),
+                            cells: [
+                              DataCell(
+                                Text(
+                                  product.sku,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Text(
-                                product.barcode,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontSize: 13,
+                              DataCell(
+                                Text(
+                                  product.barcode,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  minWidth: 180,
-                                  maxWidth: 250,
-                                ),
-                                child: Text(
+                              DataCell(
+                                Text(
                                   product.name,
                                   style: AppTextStyles.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
                                     fontSize: 13,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 2,
                                 ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Text(
-                                product.categoryName ?? '-',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontSize: 13,
-                                ),
-                              ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Text(
-                                'Rp ${product.costPrice.toStringAsFixed(0)}',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontSize: 13,
-                                ),
-                              ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Text(
-                                'Rp ${product.sellingPrice.toStringAsFixed(0)}',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      isLowStock
-                                          ? AppColors.error.withOpacity(0.15)
-                                          : AppColors.success.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color:
-                                        isLowStock
-                                            ? AppColors.error.withOpacity(0.3)
-                                            : AppColors.success.withOpacity(
-                                              0.3,
-                                            ),
-                                  ),
-                                ),
-                                child: Text(
-                                  '${product.stock}',
+                              DataCell(
+                                Text(
+                                  product.categoryName ?? '-',
                                   style: AppTextStyles.bodyMedium.copyWith(
-                                    color:
-                                        isLowStock
-                                            ? AppColors.error
-                                            : AppColors.success,
-                                    fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
                                 ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Text(
-                                product.unit,
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  fontSize: 13,
+                              DataCell(
+                                Text(
+                                  NumberFormat.currency(
+                                    locale: 'id_ID',
+                                    symbol: 'Rp ',
+                                    decimalDigits: 0,
+                                  ).format(product.costPrice),
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    product.isActive
-                                        ? Icons.check_circle
-                                        : Icons.cancel,
-                                    size: 16,
-                                    color:
-                                        product.isActive
-                                            ? AppColors.success
-                                            : AppColors.textSecondary,
+                              DataCell(
+                                Text(
+                                  NumberFormat.currency(
+                                    locale: 'id_ID',
+                                    symbol: 'Rp ',
+                                    decimalDigits: 0,
+                                  ).format(product.sellingPrice),
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontSize: 13,
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    product.isActive ? 'Aktif' : 'Nonaktif',
+                                ),
+                              ),
+                              DataCell(
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isLowStock
+                                            ? AppColors.error.withOpacity(0.1)
+                                            : AppColors.success.withOpacity(
+                                              0.1,
+                                            ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${product.stock.toInt()}',
                                     style: AppTextStyles.bodySmall.copyWith(
                                       color:
-                                          product.isActive
-                                              ? AppColors.success
-                                              : AppColors.textSecondary,
-                                      fontSize: 12,
+                                          isLowStock
+                                              ? AppColors.error
+                                              : AppColors.success,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
-                              onTap: () => _navigateToDetail(context, product),
-                            ),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Tooltip(
-                                    message: 'Lihat Detail',
-                                    child: InkWell(
-                                      onTap:
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.visibility,
+                                        color: AppColors.info,
+                                        size: 18,
+                                      ),
+                                      onPressed:
                                           () => _navigateToDetail(
                                             context,
                                             product,
                                           ),
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.info.withOpacity(
-                                            0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.visibility,
-                                          size: 18,
-                                          color: AppColors.info,
-                                        ),
-                                      ),
+                                      tooltip: 'Detail',
                                     ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Tooltip(
-                                    message: 'Edit',
-                                    child: InkWell(
-                                      onTap:
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: AppColors.warning,
+                                        size: 18,
+                                      ),
+                                      onPressed:
                                           () =>
                                               _navigateToForm(context, product),
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.warning.withOpacity(
-                                            0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.edit,
-                                          size: 18,
-                                          color: AppColors.warning,
-                                        ),
-                                      ),
+                                      tooltip: 'Edit',
                                     ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Tooltip(
-                                    message: 'Hapus',
-                                    child: InkWell(
-                                      onTap:
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: AppColors.error,
+                                        size: 18,
+                                      ),
+                                      onPressed:
                                           () => _showDeleteDialog(
                                             context,
                                             product,
                                           ),
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.error.withOpacity(
-                                            0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.delete,
-                                          size: 18,
-                                          color: AppColors.error,
-                                        ),
-                                      ),
+                                      tooltip: 'Hapus',
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
+                            ],
+                          );
+                        }).toList(),
+                  ),
                 ),
               ),
             ),
           ),
           // Pagination Footer
+          _buildPaginationFooter(state),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaginationFooter(ProductLoaded state) {
+    final totalPages = state.totalPages;
+    final totalItems = state.totalItems;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(
+          top: BorderSide(color: AppColors.textSecondary.withOpacity(0.1)),
+        ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(12),
+          bottomRight: Radius.circular(12),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Rows per page selector
+          Text(
+            'Baris per halaman:',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              border: Border(
-                top: BorderSide(
-                  color: AppColors.textSecondary.withOpacity(0.1),
-                ),
-              ),
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: AppColors.textSecondary.withOpacity(0.2),
               ),
             ),
-            child: Row(
-              children: [
-                // Rows per page selector
-                Text(
-                  'Baris per halaman:',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: AppColors.textSecondary.withOpacity(0.2),
-                    ),
-                  ),
-                  child: DropdownButton<int>(
-                    value: _rowsPerPage,
-                    underline: const SizedBox(),
-                    items:
-                        [5, 10, 25, 50, 100].map((value) {
-                          return DropdownMenuItem<int>(
-                            value: value,
-                            child: Text(
-                              '$value',
-                              style: AppTextStyles.bodySmall,
-                            ),
-                          );
-                        }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _rowsPerPage = value!;
-                        _currentPage = 0; // Reset to first page
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 24),
-                // Page info
-                Text(
-                  '${_currentPage * _rowsPerPage + 1}-${((_currentPage + 1) * _rowsPerPage).clamp(0, sortedProducts.length)} dari ${sortedProducts.length}',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const Spacer(),
-                // Page navigation
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.first_page),
-                      iconSize: 20,
-                      onPressed:
-                          _currentPage > 0
-                              ? () {
-                                setState(() {
-                                  _currentPage = 0;
-                                });
-                              }
-                              : null,
-                      tooltip: 'Halaman pertama',
-                      color: AppColors.primary,
-                      disabledColor: AppColors.textSecondary.withOpacity(0.3),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left),
-                      iconSize: 20,
-                      onPressed:
-                          _currentPage > 0
-                              ? () {
-                                setState(() {
-                                  _currentPage--;
-                                });
-                              }
-                              : null,
-                      tooltip: 'Halaman sebelumnya',
-                      color: AppColors.primary,
-                      disabledColor: AppColors.textSecondary.withOpacity(0.3),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Hal ${_currentPage + 1} / $totalPages',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right),
-                      iconSize: 20,
-                      onPressed:
-                          _currentPage < totalPages - 1
-                              ? () {
-                                setState(() {
-                                  _currentPage++;
-                                });
-                              }
-                              : null,
-                      tooltip: 'Halaman berikutnya',
-                      color: AppColors.primary,
-                      disabledColor: AppColors.textSecondary.withOpacity(0.3),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.last_page),
-                      iconSize: 20,
-                      onPressed:
-                          _currentPage < totalPages - 1
-                              ? () {
-                                setState(() {
-                                  _currentPage = totalPages - 1;
-                                });
-                              }
-                              : null,
-                      tooltip: 'Halaman terakhir',
-                      color: AppColors.primary,
-                      disabledColor: AppColors.textSecondary.withOpacity(0.3),
-                    ),
-                  ],
-                ),
-              ],
+            child: DropdownButton<int>(
+              value: _rowsPerPage,
+              underline: const SizedBox(),
+              items:
+                  [5, 10, 15, 50, 100].map((value) {
+                    return DropdownMenuItem<int>(
+                      value: value,
+                      child: Text('$value', style: AppTextStyles.bodySmall),
+                    );
+                  }).toList(),
+              onChanged: (value) {
+                if (value != null) _onRowsPerPageChanged(value);
+              },
             ),
+          ),
+          const SizedBox(width: 24),
+          // Page info
+          Text(
+            'Halaman $_currentPage dari $totalPages ($totalItems total)',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const Spacer(),
+          // Page navigation
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.first_page, size: 20),
+                onPressed: _currentPage > 1 ? () => _onPageChanged(1) : null,
+                tooltip: 'Halaman pertama',
+                color: AppColors.primary,
+                disabledColor: AppColors.textSecondary.withOpacity(0.3),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_left, size: 20),
+                onPressed:
+                    _currentPage > 1
+                        ? () => _onPageChanged(_currentPage - 1)
+                        : null,
+                tooltip: 'Halaman sebelumnya',
+                color: AppColors.primary,
+                disabledColor: AppColors.textSecondary.withOpacity(0.3),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$_currentPage',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, size: 20),
+                onPressed:
+                    _currentPage < totalPages
+                        ? () => _onPageChanged(_currentPage + 1)
+                        : null,
+                tooltip: 'Halaman berikutnya',
+                color: AppColors.primary,
+                disabledColor: AppColors.textSecondary.withOpacity(0.3),
+              ),
+              IconButton(
+                icon: const Icon(Icons.last_page, size: 20),
+                onPressed:
+                    _currentPage < totalPages
+                        ? () => _onPageChanged(totalPages)
+                        : null,
+                tooltip: 'Halaman terakhir',
+                color: AppColors.primary,
+                disabledColor: AppColors.textSecondary.withOpacity(0.3),
+              ),
+            ],
           ),
         ],
       ),
@@ -891,42 +718,22 @@ class _ProductListPageState extends State<ProductListPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            _showLowStock ? Icons.inventory_2 : Icons.shopping_basket_outlined,
+            Icons.inventory_2_outlined,
             size: 80,
             color: AppColors.textSecondary.withOpacity(0.5),
           ),
           const SizedBox(height: 16),
           Text(
-            _showLowStock
-                ? 'Tidak ada produk dengan stok rendah'
-                : 'Belum ada produk',
+            'Tidak ada produk',
             style: AppTextStyles.h6.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
-            _showLowStock
-                ? 'Semua produk memiliki stok yang cukup'
-                : 'Tambahkan produk pertama Anda',
+            'Tambahkan produk baru untuk memulai',
             style: AppTextStyles.bodyMedium.copyWith(
               color: AppColors.textSecondary,
             ),
           ),
-          if (!_showLowStock) ...[
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _navigateToForm(context, null),
-              icon: const Icon(Icons.add),
-              label: const Text('Tambah Produk'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.textWhite,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -956,9 +763,7 @@ class _ProductListPageState extends State<ProductListPage> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: () {
-              _productBloc.add(const event.LoadProducts());
-            },
+            onPressed: () => _loadProducts(),
             icon: const Icon(Icons.refresh),
             label: const Text('Coba Lagi'),
             style: ElevatedButton.styleFrom(
@@ -988,8 +793,8 @@ class _ProductListPageState extends State<ProductListPage> {
       ),
     );
 
-    if (result == true && context.mounted) {
-      _productBloc.add(const event.LoadProducts());
+    if (result == true && mounted) {
+      _loadProducts();
     }
   }
 
@@ -999,21 +804,75 @@ class _ProductListPageState extends State<ProductListPage> {
       builder:
           (dialogContext) => AlertDialog(
             title: const Text('Hapus Produk'),
-            content: Text(
-              'Apakah Anda yakin ingin menghapus produk "${product.name}"?',
-            ),
+            content: Text('Apakah Anda yakin ingin menghapus ${product.name}?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('Batal'),
               ),
-              TextButton(
+              ElevatedButton(
                 onPressed: () {
                   Navigator.pop(dialogContext);
                   _productBloc.add(event.DeleteProduct(product.id));
                 },
-                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: AppColors.textWhite,
+                ),
                 child: const Text('Hapus'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _handleImport() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls', 'csv'],
+    );
+
+    if (result != null && result.files.single.path != null) {
+      _productBloc.add(event.ImportProducts(result.files.single.path!));
+    }
+  }
+
+  void _handleDownloadTemplate() {
+    _productBloc.add(const event.DownloadImportTemplate());
+  }
+
+  void _showImportResultDialog(
+    BuildContext context,
+    Map<String, dynamic> details,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Hasil Import'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Total: ${details['total']} baris'),
+                Text(
+                  'Berhasil: ${details['imported']} produk',
+                  style: const TextStyle(color: AppColors.success),
+                ),
+                Text(
+                  'Error: ${details['errors']} baris',
+                  style: const TextStyle(color: AppColors.error),
+                ),
+                Text(
+                  'Dilewati: ${details['skipped']} baris',
+                  style: const TextStyle(color: AppColors.warning),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tutup'),
               ),
             ],
           ),

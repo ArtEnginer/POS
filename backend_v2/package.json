@@ -46,6 +46,7 @@
         "joi": "^17.11.0",
         "jsonwebtoken": "^9.0.2",
         "morgan": "^1.10.0",
+        "multer": "^1.4.5-lts.1",
         "node-cron": "^3.0.3",
         "pg": "^8.11.3",
         "pg-pool": "^3.6.1",
@@ -54,7 +55,8 @@
         "socket.io-redis": "^6.1.1",
         "uuid": "^9.0.1",
         "winston": "^3.11.0",
-        "winston-daily-rotate-file": "^4.7.1"
+        "winston-daily-rotate-file": "^4.7.1",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "eslint": "^8.55.0",

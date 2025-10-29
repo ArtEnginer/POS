@@ -484,6 +484,7 @@ CREATE TABLE purchase_returns (
     total_tax DECIMAL(15, 2) DEFAULT 0,
     total DECIMAL(15, 2) NOT NULL,
     
+    status VARCHAR(20) DEFAULT 'DRAFT',
     reason TEXT,
     notes TEXT,
     returned_by INTEGER REFERENCES users(id),

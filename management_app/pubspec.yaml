@@ -52,6 +52,9 @@ dependencies:
   pdf: ^3.11.1
   printing: ^5.13.4
 
+  # File Picker
+  file_picker: ^8.1.6
+
   # Image
   cached_network_image: ^3.4.1
   image_picker: ^1.1.2

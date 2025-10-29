@@ -58,9 +58,21 @@ export const getAllReceivings = async (req, res) => {
 
     const result = await db.query(query, params);
 
+    // Fetch items for each receiving
+    const receivingsWithItems = await Promise.all(
+      result.rows.map(async (receiving) => {
+        const itemsResult = await db.query(
+          `SELECT * FROM receiving_items WHERE receiving_id = $1`,
+          [receiving.id]
+        );
+        receiving.items = itemsResult.rows;
+        return receiving;
+      })
+    );
+
     res.json({
       success: true,
-      data: result.rows,
+      data: receivingsWithItems,
     });
   } catch (error) {
     console.error("Error fetching receivings:", error);

@@ -9,7 +9,22 @@ abstract class ProductEvent extends Equatable {
 }
 
 class LoadProducts extends ProductEvent {
-  const LoadProducts();
+  final int page;
+  final int limit;
+  final String? search;
+  final String? sortBy;
+  final bool ascending;
+
+  const LoadProducts({
+    this.page = 1,
+    this.limit = 20,
+    this.search,
+    this.sortBy,
+    this.ascending = true,
+  });
+
+  @override
+  List<Object?> get props => [page, limit, search, sortBy, ascending];
 }
 
 class LoadProductById extends ProductEvent {
@@ -87,4 +102,17 @@ class UpdateProductStock extends ProductEvent {
 
   @override
   List<Object?> get props => [id, quantity];
+}
+
+class ImportProducts extends ProductEvent {
+  final String filePath;
+
+  const ImportProducts(this.filePath);
+
+  @override
+  List<Object?> get props => [filePath];
+}
+
+class DownloadImportTemplate extends ProductEvent {
+  const DownloadImportTemplate();
 }

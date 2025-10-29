@@ -22,6 +22,8 @@ import '../bloc/sale_bloc.dart';
 import '../bloc/sale_event.dart' as sale_event;
 import '../bloc/sale_state.dart';
 import 'printer_settings_page.dart';
+import 'app_settings_page.dart';
+import 'server_settings_page.dart';
 
 class POSPage extends StatefulWidget {
   const POSPage({super.key});
@@ -128,10 +130,55 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
           //     fontSize: 11,
           //   ),
           // ),
-          IconButton(
-            icon: const Icon(Icons.print_outlined),
-            onPressed: _openPrinterSettings,
-            tooltip: 'Pengaturan Printer',
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Pengaturan',
+            onSelected: (value) {
+              switch (value) {
+                case 'printer':
+                  _openPrinterSettings();
+                  break;
+                case 'app':
+                  _openAppSettings();
+                  break;
+                case 'server':
+                  _openServerSettings();
+                  break;
+              }
+            },
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'printer',
+                    child: Row(
+                      children: [
+                        Icon(Icons.print_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Pengaturan Printer'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'app',
+                    child: Row(
+                      children: [
+                        Icon(Icons.business, size: 20),
+                        SizedBox(width: 12),
+                        Text('Identitas Aplikasi'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'server',
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Text('Pengaturan Server'),
+                      ],
+                    ),
+                  ),
+                ],
           ),
           IconButton(
             icon: const Icon(Icons.folder_open),
@@ -1189,6 +1236,20 @@ class _POSPageState extends State<POSPage> with WidgetsBindingObserver {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const PrinterSettingsPage()),
+    );
+  }
+
+  void _openAppSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AppSettingsPage()),
+    );
+  }
+
+  void _openServerSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ServerSettingsPage()),
     );
   }
 

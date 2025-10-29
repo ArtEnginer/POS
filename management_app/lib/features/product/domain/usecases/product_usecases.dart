@@ -8,8 +8,20 @@ class GetAllProducts {
 
   GetAllProducts(this.repository);
 
-  Future<Either<Failure, List<Product>>> call() async {
-    return await repository.getAllProducts();
+  Future<Either<Failure, Map<String, dynamic>>> call({
+    int page = 1,
+    int limit = 20,
+    String? search,
+    String? sortBy,
+    bool ascending = true,
+  }) async {
+    return await repository.getAllProducts(
+      page: page,
+      limit: limit,
+      search: search,
+      sortBy: sortBy,
+      ascending: ascending,
+    );
   }
 }
 
@@ -53,6 +65,24 @@ class GetLowStockProducts {
   }
 }
 
+class GetLowStockProductsPaginated {
+  final ProductRepository repository;
+
+  GetLowStockProductsPaginated(this.repository);
+
+  Future<Either<Failure, Map<String, dynamic>>> call({
+    int page = 1,
+    int limit = 20,
+    String search = '',
+  }) async {
+    return await repository.getLowStockProductsPaginated(
+      page: page,
+      limit: limit,
+      search: search,
+    );
+  }
+}
+
 class CreateProduct {
   final ProductRepository repository;
 
@@ -90,5 +120,25 @@ class UpdateProductStock {
 
   Future<Either<Failure, void>> call(String id, double quantity) async {
     return await repository.updateStock(id, quantity);
+  }
+}
+
+class ImportProducts {
+  final ProductRepository repository;
+
+  ImportProducts(this.repository);
+
+  Future<Either<Failure, Map<String, dynamic>>> call(String filePath) async {
+    return await repository.importProducts(filePath);
+  }
+}
+
+class DownloadImportTemplate {
+  final ProductRepository repository;
+
+  DownloadImportTemplate(this.repository);
+
+  Future<Either<Failure, String>> call() async {
+    return await repository.downloadImportTemplate();
   }
 }

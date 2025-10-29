@@ -18,11 +18,27 @@ class ProductLoading extends ProductState {
 
 class ProductLoaded extends ProductState {
   final List<Product> products;
+  final int currentPage;
+  final int totalPages;
+  final int totalItems;
+  final int itemsPerPage;
 
-  const ProductLoaded(this.products);
+  const ProductLoaded(
+    this.products, {
+    this.currentPage = 1,
+    this.totalPages = 1,
+    this.totalItems = 0,
+    this.itemsPerPage = 20,
+  });
 
   @override
-  List<Object?> get props => [products];
+  List<Object?> get props => [
+    products,
+    currentPage,
+    totalPages,
+    totalItems,
+    itemsPerPage,
+  ];
 }
 
 class ProductDetailLoaded extends ProductState {
@@ -42,6 +58,16 @@ class ProductOperationSuccess extends ProductState {
 
   @override
   List<Object?> get props => [message, product];
+}
+
+class ProductImportSuccess extends ProductState {
+  final String message;
+  final Map<String, dynamic> details;
+
+  const ProductImportSuccess(this.message, this.details);
+
+  @override
+  List<Object?> get props => [message, details];
 }
 
 class ProductError extends ProductState {

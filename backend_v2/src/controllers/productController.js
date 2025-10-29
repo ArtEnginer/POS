@@ -2,6 +2,9 @@ import db from "../config/database.js";
 import { cache } from "../config/redis.js";
 import { NotFoundError, ValidationError } from "../middleware/errorHandler.js";
 import logger from "../utils/logger.js";
+import xlsx from "xlsx";
+import fs from "fs";
+import path from "path";
 
 /**
  * Clear product cache (for development/debugging)
@@ -54,9 +57,25 @@ export const getAllProducts = async (req, res) => {
     categoryId,
     isActive,
     branchId,
+    sortBy = "created_at", // Default sort by created_at
+    sortOrder = "desc", // Default descending (newest first)
   } = req.query;
 
   const offset = (page - 1) * limit;
+
+  // Map sortBy to actual database column names
+  const sortColumnMap = {
+    sku: "p.sku",
+    barcode: "p.barcode",
+    name: "p.name",
+    cost_price: "p.cost_price",
+    selling_price: "p.selling_price",
+    stock: "total_quantity",
+    created_at: "p.created_at",
+  };
+
+  const sortColumn = sortColumnMap[sortBy] || "p.created_at";
+  const sortDirection = sortOrder.toLowerCase() === "asc" ? "ASC" : "DESC";
 
   // FIX: Use aggregate to avoid duplicate rows from multi-branch stocks
   let query = `
@@ -141,8 +160,8 @@ export const getAllProducts = async (req, res) => {
   const countResult = await db.query(countQuery, params);
   const total = parseInt(countResult.rows[0].count);
 
-  // Add pagination
-  query += ` ORDER BY p.created_at DESC LIMIT $${paramIndex} OFFSET $${
+  // Add sorting and pagination
+  query += ` ORDER BY ${sortColumn} ${sortDirection} LIMIT $${paramIndex} OFFSET $${
     paramIndex + 1
   }`;
   params.push(limit, offset);
@@ -333,33 +352,81 @@ export const searchProducts = async (req, res) => {
 };
 
 /**
- * Get low stock products
+ * Get low stock products with pagination
  */
 export const getLowStockProducts = async (req, res) => {
-  const { branchId } = req.query;
+  const { branchId, page = 1, limit = 20, search = "" } = req.query;
+
+  const offset = (page - 1) * limit;
 
   let query = `
-    SELECT p.*, ps.quantity, ps.available_quantity
+    SELECT p.*, ps.quantity, ps.available_quantity, ps.branch_id,
+           c.name as category_name
     FROM products p
     INNER JOIN product_stocks ps ON p.id = ps.product_id
+    LEFT JOIN categories c ON p.category_id = c.id
     WHERE p.deleted_at IS NULL
     AND p.is_trackable = true
     AND ps.available_quantity <= p.reorder_point
   `;
 
   const params = [];
+  let paramIndex = 1;
+
   if (branchId) {
-    query += " AND ps.branch_id = $1";
+    query += ` AND ps.branch_id = $${paramIndex}`;
     params.push(branchId);
+    paramIndex++;
   }
 
-  query += " ORDER BY ps.available_quantity ASC";
+  if (search) {
+    query += ` AND (p.name ILIKE $${paramIndex} OR p.sku ILIKE $${paramIndex} OR p.barcode ILIKE $${paramIndex})`;
+    params.push(`%${search}%`);
+    paramIndex++;
+  }
+
+  // Get total count
+  const countQuery = `
+    SELECT COUNT(*) 
+    FROM products p
+    INNER JOIN product_stocks ps ON p.id = ps.product_id
+    WHERE p.deleted_at IS NULL
+    AND p.is_trackable = true
+    AND ps.available_quantity <= p.reorder_point
+    ${branchId ? `AND ps.branch_id = $1` : ""}
+    ${
+      search
+        ? `AND (p.name ILIKE $${branchId ? 2 : 1} OR p.sku ILIKE $${
+            branchId ? 2 : 1
+          } OR p.barcode ILIKE $${branchId ? 2 : 1})`
+        : ""
+    }
+  `;
+
+  const countParams = [];
+  if (branchId) countParams.push(branchId);
+  if (search) countParams.push(`%${search}%`);
+
+  const countResult = await db.query(countQuery, countParams);
+  const total = parseInt(countResult.rows[0].count);
+
+  // Add sorting and pagination
+  query += ` ORDER BY ps.available_quantity ASC LIMIT $${paramIndex} OFFSET $${
+    paramIndex + 1
+  }`;
+  params.push(limit, offset);
 
   const result = await db.query(query, params);
 
   res.json({
     success: true,
     data: result.rows,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
   });
 };
 
@@ -714,5 +781,359 @@ export const updateProductStock = async (req, res) => {
     throw error;
   } finally {
     client.release();
+  }
+};
+
+/**
+ * Import products from Excel/CSV file
+ */
+export const importProducts = async (req, res) => {
+  if (!req.file) {
+    throw new ValidationError("No file uploaded");
+  }
+
+  const filePath = req.file.path;
+  const client = await db.getClient();
+
+  try {
+    // Read the Excel/CSV file
+    const workbook = xlsx.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) {
+      throw new ValidationError("File is empty or invalid format");
+    }
+
+    logger.info(`Starting import of ${data.length} rows`);
+
+    // Get all active branches ONCE (outside transaction)
+    const branchesResult = await client.query(
+      "SELECT id FROM branches WHERE is_active = true AND deleted_at IS NULL"
+    );
+    const branches = branchesResult.rows;
+
+    // Get all existing SKUs ONCE to avoid repeated queries
+    const existingSKUsResult = await client.query(
+      "SELECT sku FROM products WHERE deleted_at IS NULL"
+    );
+    const existingSKUs = new Set(existingSKUsResult.rows.map((row) => row.sku));
+
+    const results = {
+      success: [],
+      errors: [],
+      skipped: [],
+    };
+
+    // Process in batches of 100 to avoid long-running transactions
+    const BATCH_SIZE = 100;
+    const totalBatches = Math.ceil(data.length / BATCH_SIZE);
+
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const startIdx = batchIndex * BATCH_SIZE;
+      const endIdx = Math.min(startIdx + BATCH_SIZE, data.length);
+      const batch = data.slice(startIdx, endIdx);
+
+      logger.info(
+        `Processing batch ${batchIndex + 1}/${totalBatches} (rows ${
+          startIdx + 1
+        }-${endIdx})`
+      );
+
+      await client.query("BEGIN");
+
+      try {
+        for (let i = 0; i < batch.length; i++) {
+          const row = batch[i];
+          const rowNumber = startIdx + i + 2; // Excel rows start at 1, header is row 1
+
+          try {
+            // Validate required fields
+            const sku = String(row.SKU || row.sku || row.Sku || "").trim();
+            const name = String(
+              row.Nama || row.Name || row.name || row.NAMA || ""
+            ).trim();
+
+            // Parse price
+            let sellingPrice = 0;
+            const priceValue =
+              row["Harga Jual"] ||
+              row.sellingPrice ||
+              row.SellingPrice ||
+              row.selling_price;
+
+            if (
+              priceValue !== undefined &&
+              priceValue !== null &&
+              priceValue !== ""
+            ) {
+              sellingPrice = parseFloat(
+                String(priceValue).replace(/[^\d.-]/g, "")
+              );
+            }
+
+            if (!sku || !name || !sellingPrice || sellingPrice <= 0) {
+              results.errors.push({
+                row: rowNumber,
+                sku: sku || "(empty)",
+                error: `Missing/invalid required fields`,
+              });
+              continue;
+            }
+
+            // Check if exists
+            if (existingSKUs.has(sku)) {
+              results.skipped.push({
+                row: rowNumber,
+                sku,
+                reason: "Product already exists",
+              });
+              continue;
+            }
+
+            // Parse other fields
+            const barcode = String(row.Barcode || row.barcode || sku).trim();
+            const description =
+              String(
+                row.Deskripsi || row.Description || row.description || ""
+              ).trim() || null;
+            const categoryId =
+              row["Category ID"] || row.categoryId || row.category_id || null;
+            const unit = String(
+              row.Satuan || row.Unit || row.unit || "PCS"
+            ).trim();
+
+            const costPrice =
+              parseFloat(
+                String(
+                  row["Harga Beli"] ||
+                    row.costPrice ||
+                    row.CostPrice ||
+                    row.cost_price ||
+                    0
+                ).replace(/[^\d.-]/g, "")
+              ) || 0;
+            const minStock =
+              parseInt(
+                String(
+                  row["Min Stock"] || row.minStock || row.min_stock || 0
+                ).replace(/[^\d]/g, "")
+              ) || 0;
+            const maxStock =
+              parseInt(
+                String(
+                  row["Max Stock"] || row.maxStock || row.max_stock || 0
+                ).replace(/[^\d]/g, "")
+              ) || 0;
+            const reorderPoint =
+              parseInt(
+                String(
+                  row["Reorder Point"] ||
+                    row.reorderPoint ||
+                    row.reorder_point ||
+                    0
+                ).replace(/[^\d]/g, "")
+              ) || 0;
+            const taxRate =
+              parseFloat(
+                String(
+                  row["Tax Rate"] || row.taxRate || row.tax_rate || 0
+                ).replace(/[^\d.-]/g, "")
+              ) || 0;
+            const discountPercentage =
+              parseFloat(
+                String(
+                  row["Discount"] || row.discount || row.discountPercentage || 0
+                ).replace(/[^\d.-]/g, "")
+              ) || 0;
+
+            // Insert product
+            const productResult = await client.query(
+              `INSERT INTO products (
+                sku, barcode, name, description, category_id, unit,
+                cost_price, selling_price, min_stock, max_stock, reorder_point,
+                tax_rate, discount_percentage, is_active
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true)
+              RETURNING id, sku, name`,
+              [
+                sku,
+                barcode,
+                name,
+                description,
+                categoryId,
+                unit,
+                costPrice,
+                sellingPrice,
+                minStock,
+                maxStock,
+                reorderPoint,
+                taxRate,
+                discountPercentage,
+              ]
+            );
+
+            const product = productResult.rows[0];
+
+            // Batch insert stock records
+            if (branches.length > 0) {
+              const stockValues = branches
+                .map((branch) => `(${product.id}, ${branch.id}, 0, 0)`)
+                .join(", ");
+              await client.query(
+                `INSERT INTO product_stocks (product_id, branch_id, quantity, reserved_quantity)
+                 VALUES ${stockValues}`
+              );
+            }
+
+            existingSKUs.add(sku);
+
+            results.success.push({
+              row: rowNumber,
+              id: product.id,
+              sku: product.sku,
+              name: product.name,
+            });
+          } catch (error) {
+            results.errors.push({
+              row: rowNumber,
+              sku: row.SKU || row.sku || "(unknown)",
+              error: error.message,
+            });
+          }
+        }
+
+        await client.query("COMMIT");
+        logger.info(
+          `Batch ${batchIndex + 1}/${totalBatches} completed: ${
+            results.success.length
+          } total success`
+        );
+      } catch (error) {
+        await client.query("ROLLBACK");
+        logger.error(`Batch ${batchIndex + 1} failed: ${error.message}`);
+        throw error;
+      }
+    }
+
+    // Clean up uploaded file
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    // Clear cache
+    await cache.delPattern("products:*");
+
+    logger.info(
+      `Products imported: ${results.success.length} success, ${results.errors.length} errors, ${results.skipped.length} skipped by user ${req.user.id}`
+    );
+
+    res.json({
+      success: true,
+      message: `Import completed: ${results.success.length} products added`,
+      data: {
+        total: data.length,
+        imported: results.success.length,
+        errors: results.errors.length,
+        skipped: results.skipped.length,
+      },
+      details: results,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    // Clean up uploaded file on error
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    logger.error(`Failed to import products: ${error.message}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+/**
+ * Download product import template
+ */
+export const downloadImportTemplate = async (req, res) => {
+  try {
+    // Create template with sample data
+    const template = [
+      {
+        SKU: "PRD001",
+        Barcode: "1234567890123",
+        Nama: "Contoh Produk 1",
+        Deskripsi: "Deskripsi produk",
+        "Category ID": "",
+        Satuan: "PCS",
+        "Harga Beli": 10000,
+        "Harga Jual": 15000,
+        "Min Stock": 10,
+        "Max Stock": 100,
+        "Reorder Point": 20,
+        "Tax Rate": 0,
+        Discount: 0,
+      },
+      {
+        SKU: "PRD002",
+        Barcode: "1234567890124",
+        Nama: "Contoh Produk 2",
+        Deskripsi: "Deskripsi produk 2",
+        "Category ID": "",
+        Satuan: "BOX",
+        "Harga Beli": 50000,
+        "Harga Jual": 75000,
+        "Min Stock": 5,
+        "Max Stock": 50,
+        "Reorder Point": 10,
+        "Tax Rate": 11,
+        Discount: 5,
+      },
+    ];
+
+    // Create workbook and worksheet
+    const wb = xlsx.utils.book_new();
+    const ws = xlsx.utils.json_to_sheet(template);
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 10 }, // SKU
+      { wch: 15 }, // Barcode
+      { wch: 25 }, // Nama
+      { wch: 30 }, // Deskripsi
+      { wch: 12 }, // Category ID
+      { wch: 10 }, // Satuan
+      { wch: 12 }, // Harga Beli
+      { wch: 12 }, // Harga Jual
+      { wch: 10 }, // Min Stock
+      { wch: 10 }, // Max Stock
+      { wch: 12 }, // Reorder Point
+      { wch: 10 }, // Tax Rate
+      { wch: 10 }, // Discount
+    ];
+
+    xlsx.utils.book_append_sheet(wb, ws, "Products");
+
+    // Generate buffer
+    const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+
+    // Send file
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=template_import_produk.xlsx"
+    );
+
+    res.send(buffer);
+
+    logger.info(`Template downloaded by user ${req.user.id}`);
+  } catch (error) {
+    logger.error(`Failed to generate template: ${error.message}`);
+    throw error;
   }
 };
