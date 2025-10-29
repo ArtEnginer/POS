@@ -11,7 +11,6 @@ import '../../../supplier/presentation/bloc/supplier_bloc.dart';
 import '../../../supplier/presentation/pages/supplier_list_page.dart';
 import '../../../customer/presentation/bloc/customer_bloc.dart';
 import '../../../customer/presentation/pages/customer_list_page.dart';
-import '../../../sales/presentation/pages/printer_settings_page.dart';
 import '../../../branch/presentation/bloc/branch_bloc.dart';
 import '../../../branch/presentation/pages/branch_list_page.dart';
 import '../../../user/presentation/pages/user_list_page.dart';
@@ -283,10 +282,9 @@ class SettingsPage extends StatelessWidget {
             title: 'Pengaturan Printer',
             subtitle: 'Konfigurasi printer untuk cetak struk',
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PrinterSettingsPage(),
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Fitur printer settings akan segera hadir'),
                 ),
               );
             },

@@ -1,6 +1,7 @@
 import db from "../config/database.js";
 import { NotFoundError, ValidationError } from "../middleware/errorHandler.js";
 import logger from "../utils/logger.js";
+import { emitEvent } from "../utils/socket-io.js";
 
 /**
  * Get all categories
@@ -143,6 +144,15 @@ export const createCategory = async (req, res) => {
     ]);
 
     const cat = result.rows[0];
+
+    // 🚀 EMIT REAL-TIME EVENT: Category Created
+    emitEvent("category:created", {
+      action: "created",
+      category: cat,
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(`📢 WebSocket event emitted: category:created for ${cat.id}`);
+
     res.status(201).json({
       success: true,
       message: "Category created successfully",
@@ -221,6 +231,15 @@ export const updateCategory = async (req, res) => {
     ]);
 
     const cat = result.rows[0];
+
+    // 🚀 EMIT REAL-TIME EVENT: Category Updated
+    emitEvent("category:updated", {
+      action: "updated",
+      category: cat,
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(`📢 WebSocket event emitted: category:updated for ${id}`);
+
     res.json({
       success: true,
       message: "Category updated successfully",
@@ -292,6 +311,14 @@ export const deleteCategory = async (req, res) => {
     await db.query("UPDATE categories SET deleted_at = NOW() WHERE id = $1", [
       id,
     ]);
+
+    // 🚀 EMIT REAL-TIME EVENT: Category Deleted
+    emitEvent("category:deleted", {
+      action: "deleted",
+      categoryId: id,
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(`📢 WebSocket event emitted: category:deleted for ${id}`);
 
     res.json({
       success: true,

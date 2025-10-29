@@ -22,6 +22,7 @@ import routes from "./routes/index.js";
 
 // Import socket handlers
 import { initializeSocketIO } from "./socket/index.js";
+import { setIO } from "./utils/socket-io.js";
 
 dotenv.config();
 
@@ -163,6 +164,10 @@ const startServer = async () => {
     logger.info("Initializing Socket.IO...");
     initializeSocketIO(io);
 
+    // Set global io instance untuk digunakan di controllers
+    setIO(io);
+    logger.info("✅ Socket.IO instance set globally");
+
     // Start server
     httpServer.listen(PORT, () => {
       logger.info("=".repeat(60));
@@ -250,4 +255,5 @@ process.on("unhandledRejection", (reason, promise) => {
 // Start the server
 startServer();
 
-export { app, io, httpServer };
+// No need to export io anymore - use getIO() from utils/socket-io.js
+export { app, httpServer };

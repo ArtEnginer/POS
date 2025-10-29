@@ -5,6 +5,7 @@ import logger from "../utils/logger.js";
 import xlsx from "xlsx";
 import fs from "fs";
 import path from "path";
+import { emitEvent } from "../utils/socket-io.js";
 
 /**
  * Clear product cache (for development/debugging)
@@ -518,6 +519,16 @@ export const createProduct = async (req, res) => {
       `Product created: ${product.id} (${product.name}) by user ${req.user.id}`
     );
 
+    // 🚀 EMIT REAL-TIME EVENT: Product Created
+    emitEvent("product:created", {
+      action: "created",
+      product: product,
+      timestamp: new Date().toISOString(),
+    });
+    logger.info(
+      `📢 WebSocket event emitted: product:created for ${product.id}`
+    );
+
     res.status(201).json({
       success: true,
       data: product,
@@ -603,6 +614,14 @@ export const updateProduct = async (req, res) => {
 
   logger.info(`Product updated: ${id} by user ${req.user.id}`);
 
+  // 🚀 EMIT REAL-TIME EVENT: Product Updated
+  emitEvent("product:updated", {
+    action: "updated",
+    product: product,
+    timestamp: new Date().toISOString(),
+  });
+  logger.info(`📢 WebSocket event emitted: product:updated for ${id}`);
+
   res.json({
     success: true,
     data: product,
@@ -630,6 +649,14 @@ export const deleteProduct = async (req, res) => {
   await cache.delPattern("products:*");
 
   logger.info(`Product deleted: ${id} by user ${req.user.id}`);
+
+  // 🚀 EMIT REAL-TIME EVENT: Product Deleted
+  emitEvent("product:deleted", {
+    action: "deleted",
+    productId: id,
+    timestamp: new Date().toISOString(),
+  });
+  logger.info(`📢 WebSocket event emitted: product:deleted for ${id}`);
 
   res.json({
     success: true,
