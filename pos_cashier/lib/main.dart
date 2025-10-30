@@ -16,6 +16,7 @@ import 'features/server_check_page.dart';
 import 'features/server_settings_page.dart';
 import 'features/cashier/presentation/bloc/cashier_bloc.dart';
 import 'features/cashier/presentation/pages/cashier_page.dart';
+import 'features/cashier/data/services/pending_sales_service.dart';
 import 'features/sync/data/datasources/sync_service.dart';
 import 'features/sync/presentation/pages/sync_settings_page.dart';
 
@@ -25,6 +26,7 @@ late final SocketService socketService;
 late final AuthService authService;
 late final ProductRepository productRepository;
 late final SyncService syncService;
+late final PendingSalesService pendingSalesService;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +69,8 @@ void main() async {
     productRepository: productRepository,
     socketService: socketService, // Pass socket service
   );
+
+  pendingSalesService = PendingSalesService(HiveService.instance);
 
   // Check if server has been configured OR if user has saved credentials
   final isServerConfigured = await AppSettings.isServerConfigured();

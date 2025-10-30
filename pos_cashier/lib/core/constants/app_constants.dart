@@ -11,6 +11,7 @@ class AppConstants {
   static const String categoriesBox = 'categories';
   static const String settingsBox = 'settings';
   static const String authBox = 'auth';
+  static const String pendingSalesBox = 'pending_sales';
 
   // API Configuration (Backend V2)
   static const String baseUrl = 'http://localhost:3001/api/v2';

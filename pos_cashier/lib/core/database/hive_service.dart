@@ -34,6 +34,7 @@ class HiveService {
       Hive.openBox(AppConstants.categoriesBox),
       Hive.openBox(AppConstants.settingsBox),
       Hive.openBox(AppConstants.authBox),
+      Hive.openBox(AppConstants.pendingSalesBox),
     ]);
 
     _isInitialized = true;
@@ -76,6 +77,9 @@ class HiveService {
   /// Auth box
   Box get authBox => getBox(AppConstants.authBox);
 
+  /// Pending sales box
+  Box get pendingSalesBox => getBox(AppConstants.pendingSalesBox);
+
   /// Clear all data (for testing or reset)
   Future<void> clearAllData() async {
     await Future.wait([
@@ -84,6 +88,7 @@ class HiveService {
       customersBox.clear(),
       categoriesBox.clear(),
       settingsBox.clear(),
+      pendingSalesBox.clear(),
     ]);
   }
 
@@ -102,6 +107,7 @@ class HiveService {
       categoriesBox.clear(),
       settingsBox.clear(),
       authBox.clear(),
+      pendingSalesBox.clear(),
     ]);
     print('🗑️ All Hive data cleared');
   }

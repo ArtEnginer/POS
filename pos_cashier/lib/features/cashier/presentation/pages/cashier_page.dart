@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/models/product_model.dart';
 import '../../data/models/cart_item_model.dart';
+import '../../data/models/pending_sale_model.dart';
+import '../../data/services/pending_sales_service.dart';
 import '../bloc/cashier_bloc.dart';
+import '../widgets/pending_sales_dialog.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../core/database/hive_service.dart';
 import '../../../../main.dart';
 import '../../../sync/presentation/widgets/sync_header_notification.dart';
 import '../../../sync/presentation/widgets/realtime_sync_indicator.dart';
@@ -107,6 +111,41 @@ class _CashierPageState extends State<CashierPage> {
       appBar: AppBar(
         title: const Text('POS Kasir'),
         actions: [
+          // Pending Sales Button
+          IconButton(
+            icon: Stack(
+              children: [
+                const Icon(Icons.schedule),
+                if (pendingSalesService.getPendingCount() > 0)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '${pendingSalesService.getPendingCount()}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: _showPendingSales,
+            tooltip: 'Transaksi Pending',
+          ),
           // Sync Settings button - ganti refresh dengan sync yang proper
           IconButton(
             icon: const Icon(Icons.settings),
@@ -581,6 +620,35 @@ class _CashierPageState extends State<CashierPage> {
                                       width: 2,
                                     ),
                                     foregroundColor: Colors.red[400],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+
+                              // Tombol PENDING
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed:
+                                      state.cartItems.isEmpty
+                                          ? null
+                                          : () => _savePending(state),
+                                  icon: const Icon(Icons.schedule, size: 20),
+                                  label: const Text(
+                                    'PENDING',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    side: BorderSide(
+                                      color: Colors.orange[400]!,
+                                      width: 2,
+                                    ),
+                                    foregroundColor: Colors.orange[400],
                                   ),
                                 ),
                               ),
@@ -1357,6 +1425,177 @@ class _CashierPageState extends State<CashierPage> {
         ),
       ],
     );
+  }
+
+  /// Save current transaction as pending
+  void _savePending(CashierLoaded state) async {
+    try {
+      // Get current user info
+      final authBox = HiveService.instance.authBox;
+      final userData = authBox.get('user');
+      final userName =
+          userData != null && userData is Map
+              ? userData['name']?.toString() ?? 'Unknown'
+              : 'Unknown';
+
+      // Convert cart items to pending sale items
+      final items =
+          state.cartItems.map((cartItem) {
+            return PendingSaleItem(
+              productId: cartItem.product.id.toString(),
+              productName: cartItem.product.name,
+              sku: cartItem.product.barcode, // Use barcode as SKU
+              quantity: cartItem.quantity,
+              price: cartItem.product.price,
+              subtotal: cartItem.subtotal,
+              discount: cartItem.discountAmount,
+              notes: cartItem.note,
+            );
+          }).toList();
+
+      // Save pending sale
+      final pendingId = await pendingSalesService.savePending(
+        items: items,
+        totalAmount: state.subtotal,
+        discount: state.totalDiscountAmount,
+        tax: state.totalTaxAmount,
+        grandTotal: state.total,
+        notes: 'Pending - ${DateTime.now().toString().substring(0, 16)}',
+        createdBy: userName,
+      );
+
+      // Clear cart after saving
+      if (mounted) {
+        context.read<CashierBloc>().add(ClearCart());
+
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Transaksi disimpan sebagai pending (${items.length} item)',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'Lihat',
+              textColor: Colors.white,
+              onPressed: _showPendingSales,
+            ),
+          ),
+        );
+      }
+
+      print('✅ Pending sale saved: $pendingId');
+    } catch (e) {
+      print('❌ Error saving pending sale: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('Gagal menyimpan pending: $e'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Show pending sales dialog
+  void _showPendingSales() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => PendingSalesDialog(onLoadPending: _loadPendingToCart),
+    );
+  }
+
+  /// Load pending sale to cart
+  void _loadPendingToCart(PendingSaleModel pending) async {
+    try {
+      // Clear current cart first
+      context.read<CashierBloc>().add(ClearCart());
+
+      // Add each item to cart
+      for (final item in pending.items) {
+        // Find product in local database
+        final productData = HiveService.instance.productsBox.get(
+          item.productId,
+        );
+
+        if (productData != null && productData is Map) {
+          final product = ProductModel.fromJson(
+            Map<String, dynamic>.from(productData),
+          );
+
+          // Add to cart
+          context.read<CashierBloc>().add(
+            AddToCart(product: product, quantity: item.quantity),
+          );
+        } else {
+          print('⚠️ Product ${item.productId} not found in local DB');
+        }
+      }
+
+      // Delete pending sale after loading
+      await pendingSalesService.deletePending(pending.id);
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Text(
+                  'Pending dimuat ke keranjang (${pending.items.length} item)',
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+
+        // Refresh widget to update pending count badge
+        setState(() {});
+      }
+
+      print('✅ Pending sale loaded to cart: ${pending.id}');
+    } catch (e) {
+      print('❌ Error loading pending to cart: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('Gagal memuat pending: $e'),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   void _showPaymentDialog(double total) {
