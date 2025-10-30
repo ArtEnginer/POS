@@ -129,7 +129,9 @@ async function seedDatabase() {
     // ============================================
     console.log("👤 Seeding Users...");
 
-    const password = await bcrypt.hash("admin123", 10);
+    const password = "admin123";
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(password, salt);
 
     const users = [
       {
@@ -177,14 +179,7 @@ async function seedDatabase() {
            email = EXCLUDED.email,
            full_name = EXCLUDED.full_name,
            phone = EXCLUDED.phone`,
-        [
-          user.username,
-          user.email,
-          password,
-          user.full_name,
-          user.role,
-          user.phone,
-        ]
+        [user.username, user.email, hash, user.full_name, user.role, user.phone]
       );
     }
 

@@ -3,11 +3,14 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import '../constants/api_constants.dart';
 import '../auth/auth_service.dart';
 import '../error/exceptions.dart';
+import '../navigation/navigation_service.dart';
 
 class ApiClient {
   late final Dio _dio;
   final AuthService _authService;
+  final NavigationService _navigationService = NavigationService();
   bool _isRefreshing = false;
+  bool _isLoggingOut = false; // Prevent multiple logout attempts
   List<RequestOptions> _pendingRequests = [];
 
   ApiClient(this._authService) {
@@ -62,8 +65,20 @@ class ApiClient {
               _isRefreshing = false;
               _pendingRequests.clear();
 
-              // Refresh failed, logout user
+              // Prevent multiple logout/dialog attempts
+              if (_isLoggingOut) {
+                print('⚠️ Already logging out, skipping...');
+                return handler.reject(error);
+              }
+
+              _isLoggingOut = true;
+
+              // Refresh failed, session expired - logout and redirect
+              print('🔴 Token refresh failed: $e');
               await _authService.logout();
+
+              // Show session expired dialog ONCE
+              await _navigationService.showSessionExpiredDialog();
 
               return handler.reject(error);
             }
@@ -211,10 +226,19 @@ class ApiClient {
 
         case DioExceptionType.badResponse:
           final statusCode = error.response?.statusCode;
-          final message =
-              error.response?.data?['message'] ??
-              error.response?.statusMessage ??
-              'Server error';
+          final responseData = error.response?.data;
+
+          String message;
+          if (responseData is Map<String, dynamic>) {
+            message =
+                responseData['message'] ??
+                error.response?.statusMessage ??
+                'Server error';
+          } else if (responseData is String) {
+            message = responseData;
+          } else {
+            message = error.response?.statusMessage ?? 'Server error';
+          }
 
           if (statusCode == 401) {
             return UnauthorizedException(message: message);

@@ -64,43 +64,220 @@ class ProductRepository {
   }
 
   /// Sync products from server to local
-  Future<int> syncProductsFromServer({bool force = false}) async {
+  /// Support untuk dataset besar (20k+ products) dengan batch processing
+  /// dan incremental sync
+  Future<int> syncProductsFromServer({
+    bool force = false,
+    Function(int current, int total)? onProgress,
+  }) async {
     try {
-      print('🔄 Syncing products from server...');
+      print('🔄 Starting product sync...');
 
-      final products = await _apiService.getProducts(
-        branchId: AppConstants.currentBranchId,
-        limit: 1000, // Get all products
-      );
+      // Cek apakah perlu full sync atau incremental sync
+      final lastSyncTime = await _getLastSyncTime();
+      final bool needsFullSync = force || lastSyncTime == null;
 
-      if (products.isEmpty) {
-        print('⚠️ No products received from server');
-        return 0;
+      if (needsFullSync) {
+        print('📥 Performing FULL SYNC...');
+        return await _fullSync(onProgress: onProgress);
+      } else {
+        print(
+          '📥 Performing INCREMENTAL SYNC (since ${lastSyncTime.toLocal()})...',
+        );
+        return await _incrementalSync(
+          since: lastSyncTime,
+          onProgress: onProgress,
+        );
       }
-
-      final productsBox = _hiveService.productsBox;
-      int syncedCount = 0;
-
-      for (final productData in products) {
-        try {
-          final product = ProductModel.fromJson(productData);
-
-          // Update last synced time
-          final updatedProduct = product.copyWith(lastSynced: DateTime.now());
-
-          await productsBox.put(product.id, updatedProduct.toJson());
-          syncedCount++;
-        } catch (e) {
-          print('Error syncing product ${productData['id']}: $e');
-        }
-      }
-
-      print('✅ Synced $syncedCount products from server');
-      return syncedCount;
     } catch (e) {
       print('❌ Error syncing products: $e');
       return 0;
     }
+  }
+
+  /// Full sync - download semua produk dalam batch
+  Future<int> _fullSync({Function(int current, int total)? onProgress}) async {
+    try {
+      // 1. Dapatkan total count produk
+      final totalProducts = await _apiService.getProductsCount(
+        branchId: AppConstants.currentBranchId,
+      );
+
+      if (totalProducts == 0) {
+        print('⚠️ No products found on server');
+        return 0;
+      }
+
+      print('📊 Total products to sync: $totalProducts');
+
+      // 2. Hitung berapa batch yang dibutuhkan
+      const batchSize = 500; // Download 500 products per batch
+      final totalBatches = (totalProducts / batchSize).ceil();
+
+      print('📦 Will download in $totalBatches batches ($batchSize per batch)');
+
+      int syncedCount = 0;
+      final productsBox = _hiveService.productsBox;
+
+      // 3. Download batch demi batch
+      for (int batch = 0; batch < totalBatches; batch++) {
+        final page = batch + 1;
+        print(
+          '📥 Downloading batch ${batch + 1}/$totalBatches (page $page)...',
+        );
+
+        final products = await _apiService.getProducts(
+          branchId: AppConstants.currentBranchId,
+          page: page,
+          limit: batchSize,
+        );
+
+        if (products.isEmpty) {
+          print('⚠️ No products in batch $page');
+          break;
+        }
+
+        // 4. Simpan ke local database
+        for (final productData in products) {
+          try {
+            final product = ProductModel.fromJson(productData);
+            final updatedProduct = product.copyWith(
+              lastSynced: DateTime.now(),
+              syncVersion: product.syncVersion + 1,
+            );
+
+            await productsBox.put(product.id, updatedProduct.toJson());
+            syncedCount++;
+
+            // Report progress
+            if (onProgress != null) {
+              onProgress(syncedCount, totalProducts);
+            }
+          } catch (e) {
+            print('❌ Error saving product ${productData['id']}: $e');
+          }
+        }
+
+        print(
+          '✅ Batch ${batch + 1}/$totalBatches completed ($syncedCount/$totalProducts products)',
+        );
+
+        // Small delay untuk tidak overload server
+        if (batch < totalBatches - 1) {
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+      }
+
+      // 5. Simpan timestamp sync terakhir
+      await _saveLastSyncTime(DateTime.now());
+
+      print('✅ Full sync completed: $syncedCount products synced');
+      return syncedCount;
+    } catch (e) {
+      print('❌ Error in full sync: $e');
+      return 0;
+    }
+  }
+
+  /// Incremental sync - hanya download produk yang berubah
+  Future<int> _incrementalSync({
+    required DateTime since,
+    Function(int current, int total)? onProgress,
+  }) async {
+    try {
+      print('📥 Fetching products updated since ${since.toLocal()}...');
+
+      int syncedCount = 0;
+      int page = 1;
+      const batchSize = 500;
+      bool hasMore = true;
+
+      final productsBox = _hiveService.productsBox;
+
+      while (hasMore) {
+        final products = await _apiService.getProductsUpdatedSince(
+          since: since,
+          branchId: AppConstants.currentBranchId,
+          page: page,
+          limit: batchSize,
+        );
+
+        if (products.isEmpty) {
+          hasMore = false;
+          break;
+        }
+
+        for (final productData in products) {
+          try {
+            final product = ProductModel.fromJson(productData);
+            final updatedProduct = product.copyWith(
+              lastSynced: DateTime.now(),
+              syncVersion: product.syncVersion + 1,
+            );
+
+            await productsBox.put(product.id, updatedProduct.toJson());
+            syncedCount++;
+
+            if (onProgress != null) {
+              onProgress(syncedCount, syncedCount);
+            }
+          } catch (e) {
+            print('❌ Error saving product ${productData['id']}: $e');
+          }
+        }
+
+        print(
+          '✅ Incremental sync page $page: ${products.length} products updated',
+        );
+
+        // Jika products kurang dari batch size, berarti sudah habis
+        if (products.length < batchSize) {
+          hasMore = false;
+        } else {
+          page++;
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+      }
+
+      // Simpan timestamp sync terakhir
+      await _saveLastSyncTime(DateTime.now());
+
+      print('✅ Incremental sync completed: $syncedCount products updated');
+      return syncedCount;
+    } catch (e) {
+      print('❌ Error in incremental sync: $e');
+      // Jika incremental sync gagal, fallback to minimal sync
+      return 0;
+    }
+  }
+
+  /// Get last sync time dari settings
+  Future<DateTime?> _getLastSyncTime() async {
+    try {
+      final settingsBox = _hiveService.settingsBox;
+      final timestamp = settingsBox.get('last_product_sync');
+      if (timestamp != null) {
+        return DateTime.parse(timestamp);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Save last sync time ke settings
+  Future<void> _saveLastSyncTime(DateTime time) async {
+    try {
+      final settingsBox = _hiveService.settingsBox;
+      await settingsBox.put('last_product_sync', time.toIso8601String());
+    } catch (e) {
+      print('❌ Error saving last sync time: $e');
+    }
+  }
+
+  /// Public method untuk mendapatkan last sync time
+  Future<DateTime?> getLastSyncTime() async {
+    return _getLastSyncTime();
   }
 
   /// Get product by ID

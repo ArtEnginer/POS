@@ -52,6 +52,26 @@ class ApplyDiscountToItem extends CashierEvent {
   List<Object?> get props => [productId, discount];
 }
 
+// Alias untuk UpdateCartItemDiscount (sama dengan ApplyDiscountToItem)
+class UpdateCartItemDiscount extends ApplyDiscountToItem {
+  UpdateCartItemDiscount({required super.productId, required super.discount});
+}
+
+class ApplyTaxToItem extends CashierEvent {
+  final String productId;
+  final double taxPercent;
+
+  ApplyTaxToItem({required this.productId, required this.taxPercent});
+
+  @override
+  List<Object?> get props => [productId, taxPercent];
+}
+
+// Alias untuk UpdateCartItemTax
+class UpdateCartItemTax extends ApplyTaxToItem {
+  UpdateCartItemTax({required super.productId, required super.taxPercent});
+}
+
 class ApplyGlobalDiscount extends CashierEvent {
   final double discount;
 
@@ -59,6 +79,15 @@ class ApplyGlobalDiscount extends CashierEvent {
 
   @override
   List<Object?> get props => [discount];
+}
+
+class ApplyGlobalTax extends CashierEvent {
+  final double taxPercent;
+
+  ApplyGlobalTax(this.taxPercent);
+
+  @override
+  List<Object?> get props => [taxPercent];
 }
 
 class ClearCart extends CashierEvent {}
@@ -99,17 +128,27 @@ class CashierInitial extends CashierState {}
 class CashierLoaded extends CashierState {
   final List<CartItemModel> cartItems;
   final double globalDiscount;
+  final double globalTax;
   final double subtotal;
-  final double discountAmount;
-  final double tax;
+  final double itemDiscountAmount;
+  final double globalDiscountAmount;
+  final double totalDiscountAmount;
+  final double itemTaxAmount;
+  final double globalTaxAmount;
+  final double totalTaxAmount;
   final double total;
 
   CashierLoaded({
     required this.cartItems,
     this.globalDiscount = 0,
+    this.globalTax = 0,
     required this.subtotal,
-    required this.discountAmount,
-    required this.tax,
+    required this.itemDiscountAmount,
+    required this.globalDiscountAmount,
+    required this.totalDiscountAmount,
+    required this.itemTaxAmount,
+    required this.globalTaxAmount,
+    required this.totalTaxAmount,
     required this.total,
   });
 
@@ -117,9 +156,14 @@ class CashierLoaded extends CashierState {
   List<Object?> get props => [
     cartItems,
     globalDiscount,
+    globalTax,
     subtotal,
-    discountAmount,
-    tax,
+    itemDiscountAmount,
+    globalDiscountAmount,
+    totalDiscountAmount,
+    itemTaxAmount,
+    globalTaxAmount,
+    totalTaxAmount,
     total,
   ];
 }
@@ -151,6 +195,7 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
   final SyncService _syncService;
   List<CartItemModel> _cartItems = [];
   double _globalDiscount = 0;
+  double _globalTax = 0;
 
   CashierBloc({
     required HiveService hiveService,
@@ -162,7 +207,9 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     on<RemoveFromCart>(_onRemoveFromCart);
     on<UpdateCartItemQuantity>(_onUpdateCartItemQuantity);
     on<ApplyDiscountToItem>(_onApplyDiscountToItem);
+    on<ApplyTaxToItem>(_onApplyTaxToItem);
     on<ApplyGlobalDiscount>(_onApplyGlobalDiscount);
+    on<ApplyGlobalTax>(_onApplyGlobalTax);
     on<ClearCart>(_onClearCart);
     on<ProcessPayment>(_onProcessPayment);
   }
@@ -230,17 +277,39 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     _emitLoadedState(emit);
   }
 
+  void _onApplyTaxToItem(ApplyTaxToItem event, Emitter<CashierState> emit) {
+    print('🏷️ Apply Tax to Item: ${event.productId} = ${event.taxPercent}%');
+    final index = _cartItems.indexWhere(
+      (item) => item.product.id == event.productId,
+    );
+    if (index != -1) {
+      _cartItems[index] = _cartItems[index].copyWith(
+        taxPercent: event.taxPercent,
+      );
+      print('✅ Tax updated for item: ${_cartItems[index].product.name}');
+    }
+    _emitLoadedState(emit);
+  }
+
   void _onApplyGlobalDiscount(
     ApplyGlobalDiscount event,
     Emitter<CashierState> emit,
   ) {
+    print('💸 Apply Global Discount: ${event.discount}%');
     _globalDiscount = event.discount;
+    _emitLoadedState(emit);
+  }
+
+  void _onApplyGlobalTax(ApplyGlobalTax event, Emitter<CashierState> emit) {
+    print('🧾 Apply Global Tax: ${event.taxPercent}%');
+    _globalTax = event.taxPercent;
     _emitLoadedState(emit);
   }
 
   void _onClearCart(ClearCart event, Emitter<CashierState> emit) {
     _cartItems.clear();
     _globalDiscount = 0;
+    _globalTax = 0;
     emit(CashierInitial());
   }
 
@@ -281,8 +350,8 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
         transactionDate: DateTime.now(),
         items: List.from(_cartItems),
         subtotal: calculations['subtotal']!,
-        discount: calculations['discountAmount']!,
-        tax: calculations['tax']!,
+        discount: calculations['totalDiscountAmount']!,
+        tax: calculations['totalTaxAmount']!,
         total: calculations['total']!,
         paid: event.paidAmount,
         change: event.paidAmount - calculations['total']!,
@@ -347,10 +416,13 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
   Map<String, double> _calculateTotals() {
     double subtotal = 0;
     double itemDiscountAmount = 0;
+    double itemTaxAmount = 0;
 
+    // Calculate item-level amounts
     for (final item in _cartItems) {
       subtotal += item.subtotal;
       itemDiscountAmount += item.discountAmount;
+      itemTaxAmount += item.taxAmount;
     }
 
     // Apply global discount to subtotal after item discounts
@@ -358,17 +430,33 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     final globalDiscountAmount = afterItemDiscount * (_globalDiscount / 100);
     final totalDiscountAmount = itemDiscountAmount + globalDiscountAmount;
 
-    // Calculate tax (assuming 10% - should be configurable)
-    final taxRate = 0.0; // 0% for now, can be configured
-    final afterDiscount = subtotal - totalDiscountAmount;
-    final tax = afterDiscount * taxRate;
+    // Calculate global tax on amount after all discounts
+    final afterAllDiscounts = subtotal - totalDiscountAmount;
+    final globalTaxAmount = afterAllDiscounts * (_globalTax / 100);
+    final totalTaxAmount = itemTaxAmount + globalTaxAmount;
 
-    final total = afterDiscount + tax;
+    // Final total
+    final total = afterAllDiscounts + totalTaxAmount;
+
+    // Debug print
+    print('💰 CALCULATION DEBUG:');
+    print('   Subtotal: $subtotal');
+    print('   Item Discount: $itemDiscountAmount');
+    print('   Global Discount ($_globalDiscount%): $globalDiscountAmount');
+    print('   Total Discount: $totalDiscountAmount');
+    print('   Item Tax: $itemTaxAmount');
+    print('   Global Tax ($_globalTax%): $globalTaxAmount');
+    print('   Total Tax: $totalTaxAmount');
+    print('   FINAL TOTAL: $total');
 
     return {
       'subtotal': subtotal,
-      'discountAmount': totalDiscountAmount,
-      'tax': tax,
+      'itemDiscountAmount': itemDiscountAmount,
+      'globalDiscountAmount': globalDiscountAmount,
+      'totalDiscountAmount': totalDiscountAmount,
+      'itemTaxAmount': itemTaxAmount,
+      'globalTaxAmount': globalTaxAmount,
+      'totalTaxAmount': totalTaxAmount,
       'total': total,
     };
   }
@@ -379,10 +467,15 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       CashierLoaded(
         cartItems: List.from(_cartItems),
         globalDiscount: _globalDiscount,
-        subtotal: calculations['subtotal']!,
-        discountAmount: calculations['discountAmount']!,
-        tax: calculations['tax']!,
-        total: calculations['total']!,
+        globalTax: _globalTax,
+        subtotal: calculations['subtotal'] ?? 0,
+        itemDiscountAmount: calculations['itemDiscountAmount'] ?? 0,
+        globalDiscountAmount: calculations['globalDiscountAmount'] ?? 0,
+        totalDiscountAmount: calculations['totalDiscountAmount'] ?? 0,
+        itemTaxAmount: calculations['itemTaxAmount'] ?? 0,
+        globalTaxAmount: calculations['globalTaxAmount'] ?? 0,
+        totalTaxAmount: calculations['totalTaxAmount'] ?? 0,
+        total: calculations['total'] ?? 0,
       ),
     );
   }

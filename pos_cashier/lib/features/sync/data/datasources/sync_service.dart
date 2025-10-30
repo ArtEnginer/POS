@@ -255,12 +255,62 @@ class SyncService {
   /// Download products from server
   Future<void> _downloadProducts() async {
     try {
-      final count = await _productRepository.syncProductsFromServer();
+      // Broadcast: Starting download
+      _syncEventController.add(
+        SyncEvent(
+          type: 'progress',
+          message: 'Memulai sinkronisasi produk...',
+          syncedCount: 0,
+        ),
+      );
+
+      final count = await _productRepository.syncProductsFromServer(
+        onProgress: (current, total) {
+          // Broadcast progress
+          _syncEventController.add(
+            SyncEvent(
+              type: 'progress',
+              message: 'Mengunduh produk: $current dari $total',
+              syncedCount: current,
+            ),
+          );
+        },
+      );
+
       if (count > 0) {
         print('✅ Downloaded $count products from server');
+
+        // Broadcast: Success
+        _syncEventController.add(
+          SyncEvent(
+            type: 'success',
+            message: '✅ Berhasil menyinkronkan $count produk',
+            syncedCount: count,
+          ),
+        );
+      } else {
+        print('⚠️ No products downloaded');
+
+        // Broadcast: Warning
+        _syncEventController.add(
+          SyncEvent(
+            type: 'progress',
+            message: 'Tidak ada produk baru untuk disinkronkan',
+            syncedCount: 0,
+          ),
+        );
       }
     } catch (e) {
       print('❌ Error downloading products: $e');
+
+      // Broadcast: Error
+      _syncEventController.add(
+        SyncEvent(
+          type: 'error',
+          message: 'Gagal mengunduh produk: $e',
+          syncedCount: 0,
+        ),
+      );
     }
   }
 
@@ -398,6 +448,88 @@ class SyncService {
   Future<bool> manualSync() async {
     print('🔄 Manual sync triggered');
     return await syncAll();
+  }
+
+  /// Force full sync - download ulang semua produk
+  Future<bool> forceFullSync({
+    Function(int current, int total)? onProgress,
+  }) async {
+    if (_isSyncing) {
+      print('⚠️ Sync already in progress, skipping...');
+      return false;
+    }
+
+    _isSyncing = true;
+    try {
+      print('🔄 Starting FORCE FULL SYNC...');
+
+      // Broadcast: Starting
+      _syncEventController.add(
+        SyncEvent(
+          type: 'progress',
+          message: 'Memulai sinkronisasi penuh...',
+          syncedCount: 0,
+        ),
+      );
+
+      // Force full sync
+      final count = await _productRepository.syncProductsFromServer(
+        force: true,
+        onProgress:
+            onProgress ??
+            (current, total) {
+              // Broadcast progress
+              _syncEventController.add(
+                SyncEvent(
+                  type: 'progress',
+                  message: 'Mengunduh produk: $current dari $total',
+                  syncedCount: current,
+                ),
+              );
+            },
+      );
+
+      if (count > 0) {
+        print('✅ Force full sync completed: $count products');
+
+        // Broadcast: Success
+        _syncEventController.add(
+          SyncEvent(
+            type: 'success',
+            message: '✅ Sinkronisasi penuh selesai: $count produk',
+            syncedCount: count,
+          ),
+        );
+
+        return true;
+      } else {
+        // Broadcast: No updates
+        _syncEventController.add(
+          SyncEvent(
+            type: 'progress',
+            message: 'Tidak ada produk untuk disinkronkan',
+            syncedCount: 0,
+          ),
+        );
+
+        return false;
+      }
+    } catch (e) {
+      print('❌ Force full sync error: $e');
+
+      // Broadcast: Error
+      _syncEventController.add(
+        SyncEvent(
+          type: 'error',
+          message: 'Gagal melakukan sinkronisasi: $e',
+          syncedCount: 0,
+        ),
+      );
+
+      return false;
+    } finally {
+      _isSyncing = false;
+    }
   }
 
   void dispose() {

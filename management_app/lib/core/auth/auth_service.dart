@@ -3,10 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:dio/dio.dart';
 import '../constants/api_constants.dart';
+import '../navigation/navigation_service.dart';
 
 class AuthService {
   final SharedPreferences _prefs;
   final Dio _dio;
+  final NavigationService _navigationService = NavigationService();
 
   static const String _accessTokenKey = 'access_token';
   static const String _refreshTokenKey = 'refresh_token';
@@ -271,5 +273,16 @@ class AuthService {
       }
       throw Exception('Network error: ${e.message}');
     }
+  }
+
+  /// Handle session expiration - logout and show dialog
+  Future<void> handleSessionExpired() async {
+    print('🔴 Session expired - Logging out and redirecting to login');
+
+    // Clear session data
+    await logout();
+
+    // Show session expired dialog and redirect
+    await _navigationService.showSessionExpiredDialog();
   }
 }

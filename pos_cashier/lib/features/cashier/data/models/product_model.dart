@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// Product model for offline storage
+/// Product model for offline storage with incremental sync support
 class ProductModel extends Equatable {
   final String id;
   final String barcode;
@@ -12,7 +12,9 @@ class ProductModel extends Equatable {
   final String? categoryName;
   final String? imageUrl;
   final bool isActive;
-  final DateTime? lastSynced;
+  final DateTime? lastSynced; // Local sync timestamp
+  final DateTime? updatedAt; // Server update timestamp (untuk incremental sync)
+  final int syncVersion; // Versi sync untuk conflict resolution
 
   const ProductModel({
     required this.id,
@@ -26,6 +28,8 @@ class ProductModel extends Equatable {
     this.imageUrl,
     this.isActive = true,
     this.lastSynced,
+    this.updatedAt,
+    this.syncVersion = 1,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
@@ -46,6 +50,11 @@ class ProductModel extends Equatable {
           json['last_synced'] != null
               ? DateTime.parse(json['last_synced'])
               : null,
+      updatedAt:
+          json['updated_at'] != null
+              ? DateTime.parse(json['updated_at'])
+              : null,
+      syncVersion: json['sync_version'] ?? 1,
     );
   }
 
@@ -76,6 +85,8 @@ class ProductModel extends Equatable {
       'image_url': imageUrl,
       'is_active': isActive,
       'last_synced': lastSynced?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'sync_version': syncVersion,
     };
   }
 
@@ -91,6 +102,8 @@ class ProductModel extends Equatable {
     String? imageUrl,
     bool? isActive,
     DateTime? lastSynced,
+    DateTime? updatedAt,
+    int? syncVersion,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -104,6 +117,8 @@ class ProductModel extends Equatable {
       imageUrl: imageUrl ?? this.imageUrl,
       isActive: isActive ?? this.isActive,
       lastSynced: lastSynced ?? this.lastSynced,
+      updatedAt: updatedAt ?? this.updatedAt,
+      syncVersion: syncVersion ?? this.syncVersion,
     );
   }
 
@@ -120,5 +135,7 @@ class ProductModel extends Equatable {
     imageUrl,
     isActive,
     lastSynced,
+    updatedAt,
+    syncVersion,
   ];
 }

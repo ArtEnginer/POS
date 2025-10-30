@@ -1,9 +1,12 @@
 import 'package:dio/dio.dart';
 import '../constants/app_constants.dart';
 import '../utils/app_settings.dart';
+import '../navigation/navigation_service.dart';
 
 class ApiService {
   late Dio _dio;
+  final NavigationService _navigationService = NavigationService();
+  bool _sessionExpiredShown = false;
 
   ApiService() {
     _initializeDio();
@@ -22,6 +25,28 @@ class ApiService {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+        },
+      ),
+    );
+
+    // Add error interceptor for session expiration
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onError: (DioException error, ErrorInterceptorHandler handler) async {
+          // Handle 401 Unauthorized - Session expired
+          if (error.response?.statusCode == 401) {
+            print('🔴 Session expired (401) - Redirecting to login...');
+
+            // Show session expired dialog and redirect to login
+            if (!_sessionExpiredShown) {
+              _sessionExpiredShown = true;
+              await _navigationService.showSessionExpiredDialog();
+              // Reset flag after dialog is shown
+              _sessionExpiredShown = false;
+            }
+          }
+
+          return handler.next(error);
         },
       ),
     );
@@ -111,6 +136,74 @@ class ApiService {
     } catch (e) {
       print('Error fetching products: $e');
       return [];
+    }
+  }
+
+  /// Get products count untuk mengetahui berapa batch yang perlu di-download
+  Future<int> getProductsCount({String? branchId, String? search}) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': 1,
+        'limit': 1,
+        'isActive': 'true',
+      };
+
+      if (branchId != null) {
+        queryParams['branchId'] = branchId;
+      }
+
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      final response = await _dio.get(
+        AppConstants.productsEndpoint,
+        queryParameters: queryParams,
+      );
+
+      if (response.data['success'] == true) {
+        final pagination = response.data['pagination'];
+        return pagination?['total'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('❌ Error getting products count: $e');
+      return 0;
+    }
+  }
+
+  /// Get products yang berubah setelah timestamp tertentu (incremental sync)
+  Future<List<Map<String, dynamic>>> getProductsUpdatedSince({
+    required DateTime since,
+    String? branchId,
+    int page = 1,
+    int limit = 100,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'limit': limit,
+        'isActive': 'true',
+        'updatedSince': since.toIso8601String(),
+      };
+
+      if (branchId != null) {
+        queryParams['branchId'] = branchId;
+      }
+
+      final response = await _dio.get(
+        AppConstants.productsEndpoint,
+        queryParameters: queryParams,
+      );
+
+      if (response.data['success'] == true) {
+        return List<Map<String, dynamic>>.from(response.data['data'] ?? []);
+      }
+      return [];
+    } catch (e) {
+      print('❌ Error getting updated products: $e');
+      // Fallback ke getProducts biasa jika server belum support
+      return getProducts(branchId: branchId, page: page, limit: limit);
     }
   }
 

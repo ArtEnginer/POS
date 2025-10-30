@@ -10,12 +10,14 @@ import 'core/constants/app_constants.dart';
 import 'core/utils/auth_service.dart';
 import 'core/utils/product_repository.dart';
 import 'core/utils/app_settings.dart';
+import 'core/navigation/navigation_service.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/server_check_page.dart';
 import 'features/server_settings_page.dart';
 import 'features/cashier/presentation/bloc/cashier_bloc.dart';
 import 'features/cashier/presentation/pages/cashier_page.dart';
 import 'features/sync/data/datasources/sync_service.dart';
+import 'features/sync/presentation/pages/sync_settings_page.dart';
 
 // Global services
 late final ApiService apiService;
@@ -163,12 +165,15 @@ class POSCashierApp extends StatelessWidget {
         title: 'POS Kasir',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+        navigatorKey:
+            NavigationService().navigatorKey, // Add global navigator key
         home: initialPage,
         routes: {
           '/cashier': (context) => const CashierPage(),
           '/login': (context) => const LoginPage(),
           '/server-check': (context) => const ServerCheckPage(),
           '/server-settings': (context) => const ServerSettingsPage(),
+          '/sync-settings': (context) => const SyncSettingsPage(),
         },
       ),
     );

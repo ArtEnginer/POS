@@ -14,10 +14,12 @@ class SocketService {
   // Stream controllers untuk event real-time
   final _connectionController = StreamController<bool>.broadcast();
   final _serverStatusController = StreamController<bool>.broadcast();
+  final _dataUpdateController = StreamController<String>.broadcast();
 
   // Public streams
   Stream<bool> get connectionStatus => _connectionController.stream;
   Stream<bool> get serverStatus => _serverStatusController.stream;
+  Stream<String> get dataUpdates => _dataUpdateController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -44,6 +46,20 @@ class SocketService {
       final socketUrl = await AppSettings.getSocketUrl();
       print('🔌 Connecting to Socket.IO: $socketUrl');
 
+      // Get branch ID and user ID from auth box
+      final branchData = authBox.get('branch');
+      final branchId =
+          branchData != null && branchData is Map
+              ? branchData['id']?.toString() ?? '1'
+              : '1';
+      final userData = authBox.get('user');
+      final userId =
+          userData != null && userData is Map
+              ? userData['id']?.toString()
+              : null;
+
+      print('🔌 Socket Auth: branchId=$branchId, userId=$userId');
+
       _socket = IO.io(
         socketUrl,
         IO.OptionBuilder()
@@ -52,7 +68,7 @@ class SocketService {
             .enableReconnection()
             .setReconnectionAttempts(999999) // Unlimited reconnection
             .setReconnectionDelay(2000) // 2 seconds
-            .setAuth({'token': token})
+            .setAuth({'token': token, 'branchId': branchId, 'userId': userId})
             .build(),
       );
 
@@ -192,21 +208,35 @@ class SocketService {
         'barcode': product['barcode'],
         'name': product['name'],
         'description': product['description'],
-        'category_id': product['category_id']?.toString(),
+        'category_id':
+            product['categoryId']?.toString() ??
+            product['category_id']?.toString(),
         'unit': product['unit'] ?? 'PCS',
-        'cost_price': (product['cost_price'] ?? 0).toDouble(),
-        'selling_price': (product['selling_price'] ?? 0).toDouble(),
+        'cost_price':
+            (product['costPrice'] ?? product['cost_price'] ?? 0).toDouble(),
+        'selling_price':
+            (product['sellingPrice'] ?? product['selling_price'] ?? 0)
+                .toDouble(),
         'stock': 0, // Initial stock
-        'min_stock': product['min_stock'] ?? 0,
-        'max_stock': product['max_stock'] ?? 0,
-        'image_url': product['image_url'],
-        'is_active': product['is_active'] ?? true,
-        'created_at': product['created_at'] ?? DateTime.now().toIso8601String(),
-        'updated_at': product['updated_at'] ?? DateTime.now().toIso8601String(),
+        'min_stock': product['minStock'] ?? product['min_stock'] ?? 0,
+        'max_stock': product['maxStock'] ?? product['max_stock'] ?? 0,
+        'image_url': product['imageUrl'] ?? product['image_url'],
+        'is_active': product['isActive'] ?? product['is_active'] ?? true,
+        'created_at':
+            product['createdAt'] ??
+            product['created_at'] ??
+            DateTime.now().toIso8601String(),
+        'updated_at':
+            product['updatedAt'] ??
+            product['updated_at'] ??
+            DateTime.now().toIso8601String(),
       };
 
       await productsBox.put(productId, productData);
       print('✅ Product added to local DB: ${product['name']} (ID: $productId)');
+
+      // Notify listeners that product data changed
+      _dataUpdateController.add('product:created');
     } catch (e) {
       print('❌ Error handling product created: $e');
     }
@@ -235,23 +265,37 @@ class SocketService {
         'barcode': product['barcode'],
         'name': product['name'],
         'description': product['description'],
-        'category_id': product['category_id']?.toString(),
+        'category_id':
+            product['categoryId']?.toString() ??
+            product['category_id']?.toString(),
         'unit': product['unit'] ?? 'PCS',
-        'cost_price': (product['cost_price'] ?? 0).toDouble(),
-        'selling_price': (product['selling_price'] ?? 0).toDouble(),
+        'cost_price':
+            (product['costPrice'] ?? product['cost_price'] ?? 0).toDouble(),
+        'selling_price':
+            (product['sellingPrice'] ?? product['selling_price'] ?? 0)
+                .toDouble(),
         'stock': existingStock, // Preserve existing stock
-        'min_stock': product['min_stock'] ?? 0,
-        'max_stock': product['max_stock'] ?? 0,
-        'image_url': product['image_url'],
-        'is_active': product['is_active'] ?? true,
-        'created_at': product['created_at'] ?? DateTime.now().toIso8601String(),
-        'updated_at': product['updated_at'] ?? DateTime.now().toIso8601String(),
+        'min_stock': product['minStock'] ?? product['min_stock'] ?? 0,
+        'max_stock': product['maxStock'] ?? product['max_stock'] ?? 0,
+        'image_url': product['imageUrl'] ?? product['image_url'],
+        'is_active': product['isActive'] ?? product['is_active'] ?? true,
+        'created_at':
+            product['createdAt'] ??
+            product['created_at'] ??
+            DateTime.now().toIso8601String(),
+        'updated_at':
+            product['updatedAt'] ??
+            product['updated_at'] ??
+            DateTime.now().toIso8601String(),
       };
 
       await productsBox.put(productId, productData);
       print(
         '✅ Product updated in local DB: ${product['name']} (ID: $productId)',
       );
+
+      // Notify listeners that product data changed
+      _dataUpdateController.add('product:updated');
     } catch (e) {
       print('❌ Error handling product updated: $e');
     }
@@ -267,6 +311,9 @@ class SocketService {
       await productsBox.delete(productId);
 
       print('✅ Product deleted from local DB: $productId');
+
+      // Notify listeners that product data changed
+      _dataUpdateController.add('product:deleted');
     } catch (e) {
       print('❌ Error handling product deleted: $e');
     }

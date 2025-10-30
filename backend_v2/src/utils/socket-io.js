@@ -18,7 +18,10 @@ export const getIO = () => {
 
 export const emitEvent = (event, data) => {
   if (io) {
-    io.emit(event, data);
+    console.log(`📢 Broadcasting event: ${event}`);
+    console.log(`   Data:`, JSON.stringify(data).substring(0, 200));
+    io.emit(event, data); // Broadcast to ALL connected clients
+    console.log(`✅ Event broadcasted successfully`);
   } else {
     console.warn(`⚠️ Cannot emit event "${event}" - Socket.IO not initialized`);
   }

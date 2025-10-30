@@ -3,10 +3,12 @@ import 'package:crypto/crypto.dart';
 import '../database/hive_service.dart';
 import '../network/api_service.dart';
 import '../constants/app_constants.dart';
+import '../navigation/navigation_service.dart';
 
 class AuthService {
   final HiveService _hiveService;
   final ApiService _apiService;
+  final NavigationService _navigationService = NavigationService();
 
   AuthService({
     required HiveService hiveService,
@@ -409,5 +411,16 @@ class AuthService {
     } catch (e) {
       print('⚠️ Error showing saved credentials: $e');
     }
+  }
+
+  /// Handle session expiration - logout and show dialog
+  Future<void> handleSessionExpired() async {
+    print('🔴 Session expired - Logging out and redirecting to login');
+
+    // Clear session data
+    await logout();
+
+    // Show session expired dialog and redirect
+    await _navigationService.showSessionExpiredDialog();
   }
 }

@@ -7,7 +7,6 @@ import '../bloc/cashier_bloc.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../main.dart';
 import '../../../sync/presentation/widgets/sync_header_notification.dart';
-import '../../../sync/presentation/widgets/realtime_sync_indicator.dart';
 
 class CashierPage extends StatefulWidget {
   const CashierPage({super.key});
@@ -21,13 +20,14 @@ class _CashierPageState extends State<CashierPage> {
   final _barcodeController = TextEditingController();
   List<ProductModel> _allProducts = [];
   List<ProductModel> _filteredProducts = [];
+  Map<String, dynamic>? _syncStatus; // Status sync untuk header
   StreamSubscription? _socketStatusListener; // Listener untuk WebSocket status
-  StreamSubscription? _dataUpdateListener; // Listener untuk product updates
 
   @override
   void initState() {
     super.initState();
     _loadProducts();
+    _updateSyncStatus(); // Load initial status
     _searchController.addListener(_filterProducts);
 
     // Listen to WebSocket status changes for REAL-TIME update (NO TIMER!)
@@ -35,13 +35,7 @@ class _CashierPageState extends State<CashierPage> {
       print(
         '🔔 WebSocket status changed in UI: ${isOnline ? "ONLINE" : "OFFLINE"}',
       );
-      // Widget RealtimeSyncIndicator will auto-update via StreamBuilder
-    });
-
-    // Listen to product updates via WebSocket - AUTO REFRESH!
-    _dataUpdateListener = socketService.dataUpdates.listen((eventType) {
-      print('🔔 Data update detected: $eventType - Reloading products...');
-      _loadProducts(); // Auto-refresh product list
+      _updateSyncStatus(); // Instant update via Stream - NO DELAY!
     });
 
     // Hapus SnackBar listener - sekarang menggunakan header notification
@@ -53,7 +47,6 @@ class _CashierPageState extends State<CashierPage> {
     _searchController.dispose();
     _barcodeController.dispose();
     _socketStatusListener?.cancel(); // Cancel WebSocket listener
-    _dataUpdateListener?.cancel(); // Cancel data update listener
     super.dispose();
   }
 
@@ -101,6 +94,13 @@ class _CashierPageState extends State<CashierPage> {
     });
   }
 
+  /// Update sync status untuk header indicator
+  void _updateSyncStatus() {
+    setState(() {
+      _syncStatus = syncService.getSyncStatus();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,21 +109,92 @@ class _CashierPageState extends State<CashierPage> {
         actions: [
           // Sync Settings button - ganti refresh dengan sync yang proper
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.sync),
             onPressed: () {
               // Navigate ke sync settings page
               Navigator.pushNamed(context, '/sync-settings');
             },
             tooltip: 'Pengaturan Sinkronisasi',
           ),
-          // Real-time Sync Indicator (Enhanced)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Center(child: RealtimeSyncIndicatorCompact()),
+          // Sync status indicator
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Center(
+              child: Builder(
+                builder: (context) {
+                  final status = _syncStatus ?? syncService.getSyncStatus();
+                  final isOnline = status['is_online'] ?? false;
+                  final pendingSales = status['pending_sales'] ?? 0;
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isOnline ? Colors.green : Colors.orange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isOnline ? Icons.cloud_done : Icons.cloud_off,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isOnline ? 'Online' : 'Offline',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (pendingSales > 0) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$pendingSales',
+                              style: TextStyle(
+                                color: isOnline ? Colors.green : Colors.orange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () => _handleLogout(),
+            onPressed: () async {
+              await authService.logout();
+              syncService.stopBackgroundSync();
+
+              // Disconnect WebSocket if available
+              try {
+                socketService.disconnect();
+              } catch (e) {
+                print('⚠️ Socket service not available during logout: $e');
+              }
+
+              if (mounted) {
+                Navigator.of(context).pushReplacementNamed('/');
+              }
+            },
             tooltip: 'Logout',
           ),
           PopupMenuButton<String>(
@@ -532,7 +603,7 @@ class _CashierPageState extends State<CashierPage> {
                           ),
                         ),
 
-                        // Tombol Aksi di bawah - HORIZONTAL
+                        // Tombol Aksi di bawah
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -574,7 +645,7 @@ class _CashierPageState extends State<CashierPage> {
                                   ),
                                   style: OutlinedButton.styleFrom(
                                     padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
+                                      vertical: 14,
                                     ),
                                     side: BorderSide(
                                       color: Colors.red[400]!,
@@ -584,7 +655,7 @@ class _CashierPageState extends State<CashierPage> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
 
                               // Tombol BAYAR
                               Expanded(
@@ -883,7 +954,7 @@ class _CashierPageState extends State<CashierPage> {
       color: Colors.white,
       child: Column(
         children: [
-          // Input Barcode Section - 1 Baris di atas keranjang (SELALU MUNCUL)
+          // Input Barcode Section - 1 Baris di atas keranjang (SELALU TAMPIL)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -953,7 +1024,7 @@ class _CashierPageState extends State<CashierPage> {
             ),
           ),
 
-          // Cart Content
+          // Cart Content - BlocConsumer
           Expanded(
             child: BlocConsumer<CashierBloc, CashierState>(
               listener: (context, state) {
@@ -1461,146 +1532,5 @@ class _CashierPageState extends State<CashierPage> {
             ],
           ),
     );
-  }
-
-  /// Handle logout with confirmation
-  Future<void> _handleLogout() async {
-    // Cek apakah ada transaksi yang belum selesai
-    final currentState = context.read<CashierBloc>().state;
-    bool hasUnfinishedTransaction = false;
-
-    if (currentState is CashierLoaded) {
-      hasUnfinishedTransaction = currentState.cartItems.isNotEmpty;
-    }
-
-    // Tampilkan dialog konfirmasi
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.logout, color: Colors.orange),
-                SizedBox(width: 12),
-                Text('Konfirmasi Logout'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasUnfinishedTransaction) ...[
-                  const Text(
-                    '⚠️ Anda memiliki transaksi yang belum selesai di keranjang!',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Data keranjang akan hilang jika Anda logout.',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                const Text('Apakah Anda yakin ingin keluar?'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('BATAL'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('LOGOUT'),
-              ),
-            ],
-          ),
-    );
-
-    if (confirmed != true) return;
-
-    // Proses logout
-    try {
-      // Show loading
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder:
-              (context) => const Center(child: CircularProgressIndicator()),
-        );
-      }
-
-      // Logout dari auth service
-      await authService.logout();
-      print('✅ Auth logout successful');
-
-      // Stop background sync
-      syncService.stopBackgroundSync();
-      print('✅ Background sync stopped');
-
-      // Disconnect WebSocket
-      try {
-        socketService.disconnect();
-        print('✅ Socket disconnected');
-      } catch (e) {
-        print('⚠️ Socket disconnect error (non-critical): $e');
-      }
-
-      // Clear cart if exists
-      if (mounted) {
-        try {
-          context.read<CashierBloc>().add(ClearCart());
-          print('✅ Cart cleared');
-        } catch (e) {
-          print('⚠️ Cart clear error (non-critical): $e');
-        }
-      }
-
-      // Close loading dialog
-      if (mounted) {
-        Navigator.pop(context);
-      }
-
-      // Navigate to login
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/',
-          (route) => false, // Remove all previous routes
-        );
-        print('✅ Navigated to login page');
-      }
-    } catch (e) {
-      print('❌ Logout error: $e');
-
-      // Close loading if still showing
-      if (mounted) {
-        Navigator.pop(context);
-      }
-
-      // Show error
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Gagal logout: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
   }
 }

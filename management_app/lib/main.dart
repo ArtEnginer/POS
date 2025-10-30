@@ -7,8 +7,10 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
+import 'core/navigation/navigation_service.dart';
 import 'injection_container.dart' as di;
 import 'features/dashboard/presentation/pages/server_check_page.dart';
+import 'features/auth/presentation/pages/login_page.dart';
 import 'features/branch/presentation/bloc/branch_bloc.dart';
 import 'features/user/presentation/bloc/user_bloc.dart';
 
@@ -49,7 +51,13 @@ class ManagementApp extends StatelessWidget {
         title: AppConstants.appName,
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+        navigatorKey:
+            NavigationService().navigatorKey, // Add global navigator key
         home: const SplashScreen(),
+        routes: {
+          '/login': (context) => const LoginPage(),
+          '/server-check': (context) => const ServerCheckPage(),
+        },
       ),
     );
   }
