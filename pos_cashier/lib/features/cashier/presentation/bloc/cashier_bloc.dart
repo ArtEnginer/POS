@@ -6,6 +6,7 @@ import '../../data/models/product_model.dart';
 import '../../data/models/sale_model.dart';
 import '../../../../core/database/hive_service.dart';
 import '../../../sync/data/datasources/sync_service.dart';
+import '../../../../main.dart' show cashierSettingsService;
 
 // Events
 abstract class CashierEvent extends Equatable {
@@ -343,6 +344,32 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       // Generate invoice number
       final invoiceNumber = _generateInvoiceNumber();
 
+      // Calculate total cost and profit
+      double totalCost = 0;
+      for (final item in _cartItems) {
+        // Get cost price from product
+        try {
+          final productData = _hiveService.productsBox.get(item.product.id);
+          if (productData != null && productData is Map) {
+            final costPrice = (productData['cost_price'] ?? 0).toDouble();
+            totalCost += costPrice * item.quantity;
+          }
+        } catch (e) {
+          print('⚠️ Error getting cost price for ${item.product.id}: $e');
+        }
+      }
+
+      final grossProfit = calculations['total']! - totalCost;
+      final profitMargin =
+          calculations['total']! > 0
+              ? ((grossProfit / calculations['total']!) * 100).toDouble()
+              : 0.0;
+
+      // Get device info from cashier settings
+      final deviceInfo = cashierSettingsService.getDeviceInfoForTransaction();
+      final cashierLocation =
+          cashierSettingsService.getCashierLocation() ?? cashierName;
+
       // Create sale
       final sale = SaleModel(
         id: const Uuid().v4(),
@@ -363,6 +390,11 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
         note: event.note,
         isSynced: false,
         createdAt: DateTime.now(),
+        totalCost: totalCost,
+        grossProfit: grossProfit,
+        profitMargin: profitMargin,
+        cashierLocation: cashierLocation,
+        deviceInfo: deviceInfo,
       );
 
       // Save to local database

@@ -17,6 +17,9 @@ import 'features/server_settings_page.dart';
 import 'features/cashier/presentation/bloc/cashier_bloc.dart';
 import 'features/cashier/presentation/pages/cashier_page.dart';
 import 'features/cashier/data/services/pending_sales_service.dart';
+import 'features/cashier/data/services/sales_return_service.dart';
+import 'features/settings/data/services/cashier_settings_service.dart';
+import 'features/settings/presentation/pages/cashier_settings_page.dart';
 import 'features/sync/data/datasources/sync_service.dart';
 import 'features/sync/presentation/pages/sync_settings_page.dart';
 
@@ -27,6 +30,8 @@ late final AuthService authService;
 late final ProductRepository productRepository;
 late final SyncService syncService;
 late final PendingSalesService pendingSalesService;
+late final SalesReturnService salesReturnService;
+late final CashierSettingsService cashierSettingsService;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +76,9 @@ void main() async {
   );
 
   pendingSalesService = PendingSalesService(HiveService.instance);
+  salesReturnService = SalesReturnService(HiveService.instance);
+  await salesReturnService.init();
+  cashierSettingsService = CashierSettingsService(HiveService.instance);
 
   // Check if server has been configured OR if user has saved credentials
   final isServerConfigured = await AppSettings.isServerConfigured();
@@ -178,6 +186,7 @@ class POSCashierApp extends StatelessWidget {
           '/server-check': (context) => const ServerCheckPage(),
           '/server-settings': (context) => const ServerSettingsPage(),
           '/sync-settings': (context) => const SyncSettingsPage(),
+          '/cashier-settings': (context) => const CashierSettingsPage(),
         },
       ),
     );

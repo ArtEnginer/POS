@@ -15,6 +15,7 @@ import authRoutes from "./authRoutes.js";
 import syncRoutes from "./syncRoutes.js";
 import reportRoutes from "./reportRoutes.js";
 import dashboardRoutes from "./dashboardRoutes.js";
+import salesReturnsRoutes from "./salesReturns.js";
 
 const router = express.Router();
 
@@ -36,6 +37,7 @@ router.get("/", (req, res) => {
       purchases: "/purchases",
       receivings: "/receivings",
       purchaseReturns: "/purchase-returns",
+      salesReturns: "/sales-returns",
       dashboard: "/dashboard",
       sync: "/sync",
       reports: "/reports",
@@ -56,6 +58,7 @@ router.use("/sales", saleRoutes);
 router.use("/purchases", purchaseRoutes);
 router.use("/receivings", receivingRoutes);
 router.use("/purchase-returns", purchaseReturnRoutes);
+router.use("/sales-returns", salesReturnsRoutes);
 router.use("/sync", syncRoutes);
 router.use("/reports", reportRoutes);
 

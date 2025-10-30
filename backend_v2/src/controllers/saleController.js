@@ -217,6 +217,8 @@ export const createSale = async (req, res) => {
     paymentMethod,
     paymentReference,
     notes,
+    cashierLocation,
+    deviceInfo,
   } = req.body;
 
   // Validate
@@ -232,8 +234,9 @@ export const createSale = async (req, res) => {
         sale_number, branch_id, customer_id, cashier_id,
         subtotal, discount_amount, discount_percentage, tax_amount,
         total_amount, paid_amount, change_amount,
-        payment_method, payment_reference, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        payment_method, payment_reference, notes,
+        cashier_location, device_info
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         saleNumber,
@@ -250,6 +253,8 @@ export const createSale = async (req, res) => {
         paymentMethod,
         paymentReference,
         notes,
+        cashierLocation || null,
+        deviceInfo || {},
       ]
     );
 
@@ -257,19 +262,33 @@ export const createSale = async (req, res) => {
 
     // Insert sale items
     for (const item of items) {
+      // Get product cost_price if not provided
+      let costPrice = item.costPrice || 0;
+      if (!item.costPrice) {
+        const productResult = await client.query(
+          "SELECT cost_price FROM products WHERE id = $1",
+          [item.productId]
+        );
+        if (productResult.rows.length > 0) {
+          costPrice = productResult.rows[0].cost_price || 0;
+        }
+      }
+
       await client.query(
         `INSERT INTO sale_items (
-          sale_id, product_id, product_name, sku, quantity,
-          unit_price, discount_amount, discount_percentage, tax_amount,
+          sale_id, branch_id, product_id, product_name, sku, quantity,
+          unit_price, cost_price, discount_amount, discount_percentage, tax_amount,
           subtotal, total, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           sale.id,
+          branchId, // ← ADDED: branch_id for sale_items
           item.productId,
           item.productName,
           item.sku,
           item.quantity,
           item.unitPrice,
+          costPrice,
           item.discountAmount || 0,
           item.discountPercentage || 0,
           item.taxAmount || 0,

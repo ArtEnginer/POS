@@ -7,6 +7,7 @@ import '../../data/models/pending_sale_model.dart';
 import '../../data/services/pending_sales_service.dart';
 import '../bloc/cashier_bloc.dart';
 import '../widgets/pending_sales_dialog.dart';
+import '../widgets/sales_return_dialog.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/database/hive_service.dart';
 import '../../../../main.dart';
@@ -109,13 +110,23 @@ class _CashierPageState extends State<CashierPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('POS Kasir'),
+        title: Row(
+          children: [
+            const Icon(Icons.point_of_sale, size: 24),
+            const SizedBox(width: 8),
+            const Text('POS Kasir'),
+            const SizedBox(width: 16),
+            // Real-time Sync Indicator - pindah ke title area
+            const RealtimeSyncIndicatorCompact(),
+          ],
+        ),
         actions: [
-          // Pending Sales Button
+          // ===== TRANSACTION ACTIONS =====
+          // Pending Sales
           IconButton(
             icon: Stack(
               children: [
-                const Icon(Icons.schedule),
+                const Icon(Icons.schedule, color: Colors.white),
                 if (pendingSalesService.getPendingCount() > 0)
                   Positioned(
                     right: 0,
@@ -146,46 +157,86 @@ class _CashierPageState extends State<CashierPage> {
             onPressed: _showPendingSales,
             tooltip: 'Transaksi Pending',
           ),
-          // Sync Settings button - ganti refresh dengan sync yang proper
+
+          // Return Penjualan - NEW FEATURE
           IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // Navigate ke sync settings page
-              Navigator.pushNamed(context, '/sync-settings');
-            },
-            tooltip: 'Pengaturan Sinkronisasi',
+            icon: const Icon(Icons.assignment_return, color: Colors.white),
+            onPressed: _showSalesReturn,
+            tooltip: 'Return Penjualan',
           ),
-          // Real-time Sync Indicator (Enhanced)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Center(child: RealtimeSyncIndicatorCompact()),
+
+          // Visual Divider
+          Container(
+            width: 1,
+            height: 30,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: Colors.white24,
           ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _handleLogout(),
-            tooltip: 'Logout',
-          ),
+
+          // ===== SETTINGS & CONFIGURATIONS =====
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'More Options',
+            icon: const Icon(Icons.settings, color: Colors.white),
+            tooltip: 'Pengaturan',
             onSelected: (value) {
-              if (value == 'server_settings') {
-                Navigator.pushNamed(context, '/server-settings');
+              switch (value) {
+                case 'cashier_settings':
+                  Navigator.pushNamed(context, '/cashier-settings');
+                  break;
+                case 'sync_settings':
+                  Navigator.pushNamed(context, '/sync-settings');
+                  break;
+                case 'server_settings':
+                  Navigator.pushNamed(context, '/server-settings');
+                  break;
               }
             },
-            itemBuilder:
-                (context) => [
-                  const PopupMenuItem(
-                    value: 'server_settings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.settings, size: 20),
-                        SizedBox(width: 8),
-                        Text('Server Settings'),
-                      ],
-                    ),
-                  ),
-                ],
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'cashier_settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.store, size: 20),
+                    SizedBox(width: 12),
+                    Text('Pengaturan Kasir'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'sync_settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.sync, size: 20),
+                    SizedBox(width: 12),
+                    Text('Pengaturan Sinkronisasi'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'server_settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.dns, size: 20),
+                    SizedBox(width: 12),
+                    Text('Pengaturan Server'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Visual Divider
+          Container(
+            width: 1,
+            height: 30,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: Colors.white24,
+          ),
+
+          // ===== SYSTEM ACTIONS =====
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () => _handleLogout(),
+            tooltip: 'Logout',
           ),
         ],
       ),
@@ -1522,6 +1573,19 @@ class _CashierPageState extends State<CashierPage> {
       builder:
           (context) => PendingSalesDialog(onLoadPending: _loadPendingToCart),
     );
+  }
+
+  /// Show sales return dialog
+  void _showSalesReturn() {
+    showDialog(
+      context: context,
+      builder: (context) => const SalesReturnDialog(),
+    ).then((result) {
+      if (result != null) {
+        // Refresh UI if needed
+        setState(() {});
+      }
+    });
   }
 
   /// Load pending sale to cart

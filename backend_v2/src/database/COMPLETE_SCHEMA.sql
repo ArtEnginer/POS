@@ -43,6 +43,7 @@ DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS categories CASCADE;
 DROP TABLE IF EXISTS suppliers CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS cashier_settings CASCADE;
 DROP TABLE IF EXISTS user_branches CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS branches CASCADE;
@@ -62,6 +63,7 @@ DROP TYPE IF EXISTS sync_entity_type CASCADE;
 -- Drop functions
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP FUNCTION IF EXISTS update_stock_on_sale() CASCADE;
+DROP FUNCTION IF EXISTS calculate_sale_totals() CASCADE;
 
 -- ============================================
 -- SECTION 1: BRANCH MANAGEMENT
@@ -130,6 +132,47 @@ CREATE TABLE user_branches (
 
 CREATE INDEX idx_user_branches_user ON user_branches(user_id);
 CREATE INDEX idx_user_branches_branch ON user_branches(branch_id);
+
+-- Cashier Settings (Device & Location Configuration)
+CREATE TABLE cashier_settings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    
+    -- Device Information
+    device_name VARCHAR(100) NOT NULL DEFAULT 'Kasir-1',
+    device_type VARCHAR(50) DEFAULT 'windows',
+    device_identifier VARCHAR(255),
+    
+    -- Location Information
+    cashier_location VARCHAR(255),
+    counter_number VARCHAR(20),
+    floor_level VARCHAR(20),
+    
+    -- Display & UI Settings
+    receipt_printer VARCHAR(255),
+    cash_drawer_port VARCHAR(50),
+    display_type VARCHAR(50) DEFAULT 'standard',
+    theme_preference VARCHAR(50) DEFAULT 'light',
+    
+    -- Operational Settings
+    is_active BOOLEAN DEFAULT true,
+    allow_offline_mode BOOLEAN DEFAULT true,
+    auto_print_receipt BOOLEAN DEFAULT true,
+    require_customer_display BOOLEAN DEFAULT false,
+    
+    -- Additional Settings (JSON for flexibility)
+    settings JSONB DEFAULT '{}',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE(user_id, branch_id)
+);
+
+CREATE INDEX idx_cashier_settings_user ON cashier_settings(user_id);
+CREATE INDEX idx_cashier_settings_branch ON cashier_settings(branch_id);
+CREATE INDEX idx_cashier_settings_active ON cashier_settings(is_active);
 
 -- ============================================
 -- SECTION 3: PRODUCT MANAGEMENT
@@ -282,8 +325,17 @@ CREATE TABLE sales (
     paid_amount DECIMAL(15, 2) DEFAULT 0,
     change_amount DECIMAL(15, 2) DEFAULT 0,
     
+    -- Cost & Profit Tracking
+    total_cost DECIMAL(15, 2) DEFAULT 0,
+    gross_profit DECIMAL(15, 2) DEFAULT 0,
+    profit_margin DECIMAL(5, 2) DEFAULT 0,
+    
     payment_method payment_method NOT NULL,
     payment_reference VARCHAR(100),
+    
+    -- Cashier & Location Info
+    cashier_location VARCHAR(255),
+    device_info JSONB,
     
     notes TEXT,
     metadata JSONB DEFAULT '{}',
@@ -307,6 +359,7 @@ CREATE INDEX idx_sales_sync ON sales(sync_status);
 CREATE TABLE sale_items (
     id BIGSERIAL PRIMARY KEY,
     sale_id BIGINT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
     product_id INTEGER NOT NULL REFERENCES products(id),
     product_name VARCHAR(255) NOT NULL,
     sku VARCHAR(50) NOT NULL,
@@ -317,11 +370,18 @@ CREATE TABLE sale_items (
     tax_amount DECIMAL(15, 2) DEFAULT 0,
     subtotal DECIMAL(15, 2) NOT NULL,
     total DECIMAL(15, 2) NOT NULL,
+    
+    -- Cost & Profit Tracking (Snapshot at transaction time)
+    cost_price DECIMAL(15, 2),
+    total_cost DECIMAL(15, 2) GENERATED ALWAYS AS (cost_price * quantity) STORED,
+    item_profit DECIMAL(15, 2) GENERATED ALWAYS AS (total - (cost_price * quantity)) STORED,
+    
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
+CREATE INDEX idx_sale_items_branch ON sale_items(branch_id);
 CREATE INDEX idx_sale_items_product ON sale_items(product_id);
 
 -- ============================================
@@ -621,12 +681,57 @@ $$ LANGUAGE plpgsql;
 -- Apply update timestamp trigger to all tables
 CREATE TRIGGER update_branches_timestamp BEFORE UPDATE ON branches FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_users_timestamp BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_cashier_settings_timestamp BEFORE UPDATE ON cashier_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_products_timestamp BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_customers_timestamp BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_suppliers_timestamp BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_sales_timestamp BEFORE UPDATE ON sales FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_purchases_timestamp BEFORE UPDATE ON purchases FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_receivings_timestamp BEFORE UPDATE ON receivings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Auto-calculate sale profit totals
+CREATE OR REPLACE FUNCTION calculate_sale_totals()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_total_cost DECIMAL(15, 2);
+    v_total_amount DECIMAL(15, 2);
+    v_gross_profit DECIMAL(15, 2);
+    v_profit_margin DECIMAL(5, 2);
+BEGIN
+    -- Calculate totals from sale_items
+    SELECT 
+        COALESCE(SUM(total_cost), 0),
+        COALESCE(SUM(total), 0)
+    INTO v_total_cost, v_total_amount
+    FROM sale_items
+    WHERE sale_id = NEW.sale_id;
+    
+    -- Calculate profit
+    v_gross_profit := v_total_amount - v_total_cost;
+    
+    -- Calculate profit margin (avoid division by zero)
+    IF v_total_amount > 0 THEN
+        v_profit_margin := (v_gross_profit / v_total_amount) * 100;
+    ELSE
+        v_profit_margin := 0;
+    END IF;
+    
+    -- Update sales table
+    UPDATE sales
+    SET 
+        total_cost = v_total_cost,
+        gross_profit = v_gross_profit,
+        profit_margin = v_profit_margin
+    WHERE id = NEW.sale_id;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_calculate_sale_totals
+AFTER INSERT OR UPDATE ON sale_items
+FOR EACH ROW
+EXECUTE FUNCTION calculate_sale_totals();
 
 -- Auto-update product stock when sale is created
 CREATE OR REPLACE FUNCTION update_stock_on_sale()
@@ -652,7 +757,65 @@ FOR EACH ROW
 EXECUTE FUNCTION update_stock_on_sale();
 
 -- ============================================
--- SECTION 14: INITIAL DATA
+-- SECTION 14: VIEWS FOR REPORTING
+-- ============================================
+
+-- Sales Profit Analysis View
+CREATE OR REPLACE VIEW v_sales_profit_analysis AS
+SELECT 
+    s.id,
+    s.sale_number,
+    s.sale_date,
+    b.name as branch_name,
+    u.full_name as cashier_name,
+    c.name as customer_name,
+    s.subtotal,
+    s.discount_amount,
+    s.tax_amount,
+    s.total_amount,
+    s.total_cost,
+    s.gross_profit,
+    s.profit_margin,
+    s.cashier_location,
+    s.device_info,
+    s.payment_method,
+    s.status,
+    COUNT(si.id) as total_items,
+    SUM(si.quantity) as total_quantity
+FROM sales s
+LEFT JOIN branches b ON s.branch_id = b.id
+LEFT JOIN users u ON s.cashier_id = u.id
+LEFT JOIN customers c ON s.customer_id = c.id
+LEFT JOIN sale_items si ON s.id = si.sale_id
+GROUP BY s.id, b.name, u.full_name, c.name;
+
+-- Sale Items with Profit Detail View
+CREATE OR REPLACE VIEW v_sale_items_profit AS
+SELECT 
+    si.id,
+    si.sale_id,
+    s.sale_number,
+    s.sale_date,
+    b.name as branch_name,
+    si.product_id,
+    si.product_name,
+    si.sku,
+    si.quantity,
+    si.unit_price,
+    si.cost_price,
+    si.total_cost,
+    si.total,
+    si.item_profit,
+    CASE 
+        WHEN si.total > 0 THEN ((si.item_profit / si.total) * 100)
+        ELSE 0
+    END as item_profit_margin
+FROM sale_items si
+JOIN sales s ON si.sale_id = s.id
+JOIN branches b ON si.branch_id = b.id;
+
+-- ============================================
+-- SECTION 15: INITIAL DATA
 -- ============================================
 
 -- Default super admin user (password: admin123)
@@ -677,12 +840,21 @@ FROM users u, branches b
 WHERE u.username = 'admin' AND b.code = 'HQ'
 ON CONFLICT (user_id, branch_id) DO NOTHING;
 
+-- Default cashier settings for admin
+INSERT INTO cashier_settings (user_id, branch_id, device_name, cashier_location, counter_number)
+SELECT u.id, b.id, 'Kasir-Admin', 'Head Office', '1'
+FROM users u, branches b
+WHERE u.username = 'admin' AND b.code = 'HQ'
+ON CONFLICT (user_id, branch_id) DO NOTHING;
+
 -- ============================================
 -- COMPLETE! DATABASE READY TO USE
 -- ============================================
 
 SELECT '✅ Database schema created successfully!' as status;
 SELECT '✅ QUANTITY Support: DECIMAL(15, 3) - Mendukung pecahan (1.5, 2.75, dll)' as feature;
+SELECT '✅ COST & PROFIT Tracking: Auto-calculate profit per item & per sale' as feature2;
+SELECT '✅ CASHIER Settings: Device name, location, counter tracking' as feature3;
 SELECT 'Username: admin | Password: admin123' as credentials;
 SELECT 'Total Tables: ' || COUNT(*) || ' tables created' as summary
 FROM information_schema.tables 

@@ -23,6 +23,13 @@ class SaleModel extends Equatable {
   final DateTime? syncedAt;
   final DateTime createdAt;
 
+  // Cost & Profit tracking
+  final double? totalCost;
+  final double? grossProfit;
+  final double? profitMargin;
+  final String? cashierLocation;
+  final Map<String, dynamic>? deviceInfo;
+
   const SaleModel({
     required this.id,
     required this.invoiceNumber,
@@ -43,23 +50,68 @@ class SaleModel extends Equatable {
     this.isSynced = false,
     this.syncedAt,
     required this.createdAt,
+    this.totalCost,
+    this.grossProfit,
+    this.profitMargin,
+    this.cashierLocation,
+    this.deviceInfo,
   });
 
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     return SaleModel(
       id: json['id']?.toString() ?? '',
-      invoiceNumber: json['invoice_number']?.toString() ?? '',
-      transactionDate: DateTime.parse(json['transaction_date']),
+      invoiceNumber: json['invoiceNumber']?.toString() ?? json['invoice_number']?.toString() ?? '',
+      transactionDate: json['createdAt'] != null 
+          ? DateTime.parse(json['createdAt']) 
+          : (json['transaction_date'] != null ? DateTime.parse(json['transaction_date']) : DateTime.now()),
       items:
           (json['items'] as List?)
               ?.map((item) {
                 try {
                   if (item is Map<String, dynamic>) {
-                    return CartItemModel.fromJson(item);
+                    // Transform backend flat structure to nested CartItemModel structure
+                    final transformedItem = {
+                      'product': {
+                        'id': item['productId']?.toString() ?? '',
+                        'name': item['productName']?.toString() ?? '',
+                        'sku': item['sku']?.toString() ?? '',
+                        'price': (item['unitPrice'] is num) 
+                            ? (item['unitPrice'] as num).toDouble() 
+                            : double.tryParse(item['unitPrice']?.toString() ?? '0') ?? 0.0,
+                      },
+                      'quantity': (item['quantity'] is num) 
+                          ? (item['quantity'] as num).toInt() 
+                          : int.tryParse(item['quantity']?.toString() ?? '1') ?? 1,
+                      'discount': (item['discount'] is num) 
+                          ? (item['discount'] as num).toDouble() 
+                          : double.tryParse(item['discount']?.toString() ?? '0') ?? 0.0,
+                      'tax_percent': (item['tax'] is num) 
+                          ? (item['tax'] as num).toDouble() 
+                          : double.tryParse(item['tax']?.toString() ?? '0') ?? 0.0,
+                    };
+                    return CartItemModel.fromJson(transformedItem);
                   } else if (item is Map) {
-                    return CartItemModel.fromJson(
-                      Map<String, dynamic>.from(item),
-                    );
+                    final itemMap = Map<String, dynamic>.from(item);
+                    final transformedItem = {
+                      'product': {
+                        'id': itemMap['productId']?.toString() ?? '',
+                        'name': itemMap['productName']?.toString() ?? '',
+                        'sku': itemMap['sku']?.toString() ?? '',
+                        'price': (itemMap['unitPrice'] is num) 
+                            ? (itemMap['unitPrice'] as num).toDouble() 
+                            : double.tryParse(itemMap['unitPrice']?.toString() ?? '0') ?? 0.0,
+                      },
+                      'quantity': (itemMap['quantity'] is num) 
+                          ? (itemMap['quantity'] as num).toInt() 
+                          : int.tryParse(itemMap['quantity']?.toString() ?? '1') ?? 1,
+                      'discount': (itemMap['discount'] is num) 
+                          ? (itemMap['discount'] as num).toDouble() 
+                          : double.tryParse(itemMap['discount']?.toString() ?? '0') ?? 0.0,
+                      'tax_percent': (itemMap['tax'] is num) 
+                          ? (itemMap['tax'] as num).toDouble() 
+                          : double.tryParse(itemMap['tax']?.toString() ?? '0') ?? 0.0,
+                    };
+                    return CartItemModel.fromJson(transformedItem);
                   }
                   return null;
                 } catch (e) {
@@ -71,25 +123,62 @@ class SaleModel extends Equatable {
               .cast<CartItemModel>()
               .toList() ??
           [],
-      subtotal: (json['subtotal'] ?? 0).toDouble(),
-      discount: (json['discount'] ?? 0).toDouble(),
-      tax: (json['tax'] ?? 0).toDouble(),
-      total: (json['total'] ?? 0).toDouble(),
-      paid: (json['paid'] ?? 0).toDouble(),
-      change: (json['change'] ?? 0).toDouble(),
-      paymentMethod: json['payment_method']?.toString() ?? 'cash',
-      customerId: json['customer_id']?.toString(),
-      customerName: json['customer_name']?.toString(),
-      cashierId: json['cashier_id']?.toString() ?? '',
-      cashierName: json['cashier_name']?.toString() ?? '',
-      note: json['note']?.toString(),
-      isSynced: json['is_synced'] ?? false,
+      subtotal: (json['subtotal'] is num) 
+          ? (json['subtotal'] as num).toDouble() 
+          : double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
+      discount: (json['discount'] is num) 
+          ? (json['discount'] as num).toDouble() 
+          : double.tryParse(json['discount']?.toString() ?? '0') ?? 0.0,
+      tax: (json['tax'] is num) 
+          ? (json['tax'] as num).toDouble() 
+          : double.tryParse(json['tax']?.toString() ?? '0') ?? 0.0,
+      total: (json['total'] is num) 
+          ? (json['total'] as num).toDouble() 
+          : double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      paid: (json['paidAmount'] is num) 
+          ? (json['paidAmount'] as num).toDouble() 
+          : (json['paid'] is num) 
+              ? (json['paid'] as num).toDouble() 
+              : double.tryParse(json['paidAmount']?.toString() ?? json['paid']?.toString() ?? '0') ?? 0.0,
+      change: (json['changeAmount'] is num) 
+          ? (json['changeAmount'] as num).toDouble() 
+          : (json['change'] is num) 
+              ? (json['change'] as num).toDouble() 
+              : double.tryParse(json['changeAmount']?.toString() ?? json['change']?.toString() ?? '0') ?? 0.0,
+      paymentMethod: json['paymentMethod']?.toString() ?? json['payment_method']?.toString() ?? 'cash',
+      customerId: json['customerId']?.toString() ?? json['customer_id']?.toString(),
+      customerName: json['customerName']?.toString() ?? json['customer_name']?.toString(),
+      cashierId: json['cashierId']?.toString() ?? json['cashier_id']?.toString() ?? '',
+      cashierName: json['cashierName']?.toString() ?? json['cashier_name']?.toString() ?? '',
+      note: json['notes']?.toString() ?? json['note']?.toString(),
+      isSynced: json['isSynced'] ?? json['is_synced'] ?? true,
       syncedAt:
-          json['synced_at'] != null ? DateTime.parse(json['synced_at']) : null,
+          json['syncedAt'] != null 
+              ? DateTime.parse(json['syncedAt']) 
+              : (json['synced_at'] != null ? DateTime.parse(json['synced_at']) : null),
       createdAt:
-          json['created_at'] != null
-              ? DateTime.parse(json['created_at'])
-              : DateTime.now(),
+          json['createdAt'] != null
+              ? DateTime.parse(json['createdAt'])
+              : (json['created_at'] != null
+                  ? DateTime.parse(json['created_at'])
+                  : DateTime.now()),
+      totalCost:
+          json['total_cost'] != null
+              ? (json['total_cost'] as num).toDouble()
+              : null,
+      grossProfit:
+          json['gross_profit'] != null
+              ? (json['gross_profit'] as num).toDouble()
+              : null,
+      profitMargin:
+          json['profit_margin'] != null
+              ? (json['profit_margin'] as num).toDouble()
+              : null,
+      cashierLocation: json['cashier_location']?.toString(),
+      deviceInfo:
+          json['device_info'] != null
+              ? Map<String, dynamic>.from(json['device_info'] as Map)
+              : null,
     );
   }
 
@@ -114,6 +203,11 @@ class SaleModel extends Equatable {
       'is_synced': isSynced,
       'synced_at': syncedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
+      'total_cost': totalCost,
+      'gross_profit': grossProfit,
+      'profit_margin': profitMargin,
+      'cashier_location': cashierLocation,
+      'device_info': deviceInfo,
     };
   }
 
@@ -137,6 +231,11 @@ class SaleModel extends Equatable {
     bool? isSynced,
     DateTime? syncedAt,
     DateTime? createdAt,
+    double? totalCost,
+    double? grossProfit,
+    double? profitMargin,
+    String? cashierLocation,
+    Map<String, dynamic>? deviceInfo,
   }) {
     return SaleModel(
       id: id ?? this.id,
@@ -158,6 +257,11 @@ class SaleModel extends Equatable {
       isSynced: isSynced ?? this.isSynced,
       syncedAt: syncedAt ?? this.syncedAt,
       createdAt: createdAt ?? this.createdAt,
+      totalCost: totalCost ?? this.totalCost,
+      grossProfit: grossProfit ?? this.grossProfit,
+      profitMargin: profitMargin ?? this.profitMargin,
+      cashierLocation: cashierLocation ?? this.cashierLocation,
+      deviceInfo: deviceInfo ?? this.deviceInfo,
     );
   }
 
@@ -182,5 +286,10 @@ class SaleModel extends Equatable {
     isSynced,
     syncedAt,
     createdAt,
+    totalCost,
+    grossProfit,
+    profitMargin,
+    cashierLocation,
+    deviceInfo,
   ];
 }

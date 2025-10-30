@@ -232,6 +232,7 @@ class ApiService {
             final product = item['product'];
             final quantity = item['quantity'] ?? 1;
             final unitPrice = (product['price'] ?? 0).toDouble();
+            final costPrice = (product['cost_price'] ?? 0).toDouble();
             final discountPercentage = (item['discount'] ?? 0).toDouble();
 
             final itemSubtotal = unitPrice * quantity;
@@ -245,6 +246,7 @@ class ApiService {
               'sku': product['barcode'] ?? product['sku'] ?? '',
               'quantity': quantity,
               'unitPrice': unitPrice,
+              'costPrice': costPrice, // ← ADDED
               'discountAmount': itemDiscountAmount,
               'discountPercentage': discountPercentage,
               'taxAmount': 0,
@@ -269,6 +271,8 @@ class ApiService {
         'paymentMethod': saleData['payment_method'] ?? 'cash',
         'paymentReference': null,
         'notes': saleData['note'],
+        'cashierLocation': saleData['cashier_location'], // ← ADDED
+        'deviceInfo': saleData['device_info'], // ← ADDED
       };
 
       print('📤 Sending sale to server: ${transformedData['saleNumber']}');
