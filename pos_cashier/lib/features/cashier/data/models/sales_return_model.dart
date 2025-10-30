@@ -5,7 +5,7 @@ import 'cart_item_model.dart';
 class ReturnItemModel extends Equatable {
   final String productId;
   final String productName;
-  final int quantity; // Jumlah yang di-return
+  final double quantity; // Jumlah yang di-return
   final double unitPrice;
   final double subtotal;
   final String? reason; // Alasan return khusus item ini
@@ -44,7 +44,7 @@ class ReturnItemModel extends Equatable {
   /// Create from CartItemModel
   factory ReturnItemModel.fromCartItem(
     CartItemModel cartItem, {
-    int? returnQuantity,
+    double? returnQuantity,
     String? reason,
   }) {
     final qty = returnQuantity ?? cartItem.quantity;

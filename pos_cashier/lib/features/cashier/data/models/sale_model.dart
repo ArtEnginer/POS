@@ -1,10 +1,12 @@
 import 'package:equatable/equatable.dart';
 import 'cart_item_model.dart';
+import 'sale_return_model.dart';
 
 /// Sale/Transaction model for offline storage
 class SaleModel extends Equatable {
   final String id;
   final String invoiceNumber;
+  final int? branchId; // Branch ID for multi-branch support
   final DateTime transactionDate;
   final List<CartItemModel> items;
   final double subtotal;
@@ -30,9 +32,13 @@ class SaleModel extends Equatable {
   final String? cashierLocation;
   final Map<String, dynamic>? deviceInfo;
 
+  // Returns tracking
+  final List<SaleReturnModel> returns;
+
   const SaleModel({
     required this.id,
     required this.invoiceNumber,
+    this.branchId,
     required this.transactionDate,
     required this.items,
     required this.subtotal,
@@ -55,6 +61,7 @@ class SaleModel extends Equatable {
     this.profitMargin,
     this.cashierLocation,
     this.deviceInfo,
+    this.returns = const [],
   });
 
   factory SaleModel.fromJson(Map<String, dynamic> json) {
@@ -64,6 +71,7 @@ class SaleModel extends Equatable {
           json['invoiceNumber']?.toString() ??
           json['invoice_number']?.toString() ??
           '',
+      branchId: json['branchId'] ?? json['branch_id'],
       transactionDate:
           json['createdAt'] != null
               ? DateTime.parse(json['createdAt'])
@@ -75,85 +83,193 @@ class SaleModel extends Equatable {
               ?.map((item) {
                 try {
                   if (item is Map<String, dynamic>) {
-                    // Transform backend flat structure to nested CartItemModel structure
-                    final transformedItem = {
-                      'product': {
-                        'id': item['productId']?.toString() ?? '',
-                        'name': item['productName']?.toString() ?? '',
-                        'sku': item['sku']?.toString() ?? '',
-                        'price':
-                            (item['unitPrice'] is num)
-                                ? (item['unitPrice'] as num).toDouble()
+                    // ✅ FIX: Check if data is from LOCAL storage (nested product) or BACKEND (flat structure)
+                    if (item.containsKey('product')) {
+                      // LOCAL FORMAT: Data sudah dalam format CartItemModel
+                      return CartItemModel.fromJson(item);
+                    } else {
+                      // BACKEND FORMAT: Transform flat structure to nested CartItemModel
+                      final transformedItem = {
+                        'product': {
+                          'id': item['productId']?.toString() ?? '',
+                          'name': item['productName']?.toString() ?? '',
+                          'sku': item['sku']?.toString() ?? '',
+                          'barcode': item['sku']?.toString() ?? '',
+                          'price':
+                              (item['unitPrice'] is num)
+                                  ? (item['unitPrice'] as num).toDouble()
+                                  : double.tryParse(
+                                        item['unitPrice']?.toString() ?? '0',
+                                      ) ??
+                                      0.0,
+                          'cost_price':
+                              (item['costPrice'] is num)
+                                  ? (item['costPrice'] as num).toDouble()
+                                  : double.tryParse(
+                                        item['costPrice']?.toString() ?? '0',
+                                      ) ??
+                                      0.0,
+                        },
+                        'quantity':
+                            (item['quantity'] is num)
+                                ? (item['quantity'] as num).toDouble()
                                 : double.tryParse(
-                                      item['unitPrice']?.toString() ?? '0',
+                                      item['quantity']?.toString() ?? '1',
+                                    ) ??
+                                    1.0,
+                        // Support both percentage and amount for discount
+                        'discount':
+                            (item['discountPercentage'] is num)
+                                ? (item['discountPercentage'] as num).toDouble()
+                                : double.tryParse(
+                                      item['discountPercentage']?.toString() ??
+                                          '0',
                                     ) ??
                                     0.0,
-                      },
-                      'quantity':
-                          (item['quantity'] is num)
-                              ? (item['quantity'] as num).toInt()
-                              : int.tryParse(
-                                    item['quantity']?.toString() ?? '1',
-                                  ) ??
-                                  1,
-                      'discount':
-                          (item['discount'] is num)
-                              ? (item['discount'] as num).toDouble()
-                              : double.tryParse(
-                                    item['discount']?.toString() ?? '0',
-                                  ) ??
-                                  0.0,
-                      'tax_percent':
-                          (item['tax'] is num)
-                              ? (item['tax'] as num).toDouble()
-                              : double.tryParse(
-                                    item['tax']?.toString() ?? '0',
-                                  ) ??
-                                  0.0,
-                    };
-                    return CartItemModel.fromJson(transformedItem);
+                        'discount_amount':
+                            (item['discountAmount'] is num)
+                                ? (item['discountAmount'] as num).toDouble()
+                                : double.tryParse(
+                                      item['discountAmount']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        // Support both percentage and amount for tax
+                        'tax_percent':
+                            (item['taxPercentage'] is num)
+                                ? (item['taxPercentage'] as num).toDouble()
+                                : (item['taxAmount'] is num &&
+                                    item['subtotal'] is num &&
+                                    item['subtotal'] > 0)
+                                ? ((item['taxAmount'] as num).toDouble() /
+                                    (item['subtotal'] as num).toDouble() *
+                                    100)
+                                : double.tryParse(
+                                      item['tax']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'tax_amount':
+                            (item['taxAmount'] is num)
+                                ? (item['taxAmount'] as num).toDouble()
+                                : double.tryParse(
+                                      item['taxAmount']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'subtotal':
+                            (item['subtotal'] is num)
+                                ? (item['subtotal'] as num).toDouble()
+                                : double.tryParse(
+                                      item['subtotal']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'total':
+                            (item['total'] is num)
+                                ? (item['total'] as num).toDouble()
+                                : double.tryParse(
+                                      item['total']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'notes': item['notes']?.toString(),
+                      };
+                      return CartItemModel.fromJson(transformedItem);
+                    }
                   } else if (item is Map) {
                     final itemMap = Map<String, dynamic>.from(item);
-                    final transformedItem = {
-                      'product': {
-                        'id': itemMap['productId']?.toString() ?? '',
-                        'name': itemMap['productName']?.toString() ?? '',
-                        'sku': itemMap['sku']?.toString() ?? '',
-                        'price':
-                            (itemMap['unitPrice'] is num)
-                                ? (itemMap['unitPrice'] as num).toDouble()
+
+                    // ✅ FIX: Check format type
+                    if (itemMap.containsKey('product')) {
+                      // LOCAL FORMAT
+                      return CartItemModel.fromJson(itemMap);
+                    } else {
+                      // BACKEND FORMAT
+                      final transformedItem = {
+                        'product': {
+                          'id': itemMap['productId']?.toString() ?? '',
+                          'name': itemMap['productName']?.toString() ?? '',
+                          'sku': itemMap['sku']?.toString() ?? '',
+                          'barcode': itemMap['sku']?.toString() ?? '',
+                          'price':
+                              (itemMap['unitPrice'] is num)
+                                  ? (itemMap['unitPrice'] as num).toDouble()
+                                  : double.tryParse(
+                                        itemMap['unitPrice']?.toString() ?? '0',
+                                      ) ??
+                                      0.0,
+                          'cost_price':
+                              (itemMap['costPrice'] is num)
+                                  ? (itemMap['costPrice'] as num).toDouble()
+                                  : double.tryParse(
+                                        itemMap['costPrice']?.toString() ?? '0',
+                                      ) ??
+                                      0.0,
+                        },
+                        'quantity':
+                            (itemMap['quantity'] is num)
+                                ? (itemMap['quantity'] as num).toDouble()
                                 : double.tryParse(
-                                      itemMap['unitPrice']?.toString() ?? '0',
+                                      itemMap['quantity']?.toString() ?? '1',
+                                    ) ??
+                                    1.0,
+                        'discount':
+                            (itemMap['discountPercentage'] is num)
+                                ? (itemMap['discountPercentage'] as num)
+                                    .toDouble()
+                                : double.tryParse(
+                                      itemMap['discountPercentage']
+                                              ?.toString() ??
+                                          '0',
                                     ) ??
                                     0.0,
-                      },
-                      'quantity':
-                          (itemMap['quantity'] is num)
-                              ? (itemMap['quantity'] as num).toInt()
-                              : int.tryParse(
-                                    itemMap['quantity']?.toString() ?? '1',
-                                  ) ??
-                                  1,
-                      'discount':
-                          (itemMap['discount'] is num)
-                              ? (itemMap['discount'] as num).toDouble()
-                              : double.tryParse(
-                                    itemMap['discount']?.toString() ?? '0',
-                                  ) ??
-                                  0.0,
-                      'tax_percent':
-                          (itemMap['tax'] is num)
-                              ? (itemMap['tax'] as num).toDouble()
-                              : double.tryParse(
-                                    itemMap['tax']?.toString() ?? '0',
-                                  ) ??
-                                  0.0,
-                    };
-                    return CartItemModel.fromJson(transformedItem);
+                        'discount_amount':
+                            (itemMap['discountAmount'] is num)
+                                ? (itemMap['discountAmount'] as num).toDouble()
+                                : double.tryParse(
+                                      itemMap['discountAmount']?.toString() ??
+                                          '0',
+                                    ) ??
+                                    0.0,
+                        'tax_percent':
+                            (itemMap['taxPercentage'] is num)
+                                ? (itemMap['taxPercentage'] as num).toDouble()
+                                : (itemMap['taxAmount'] is num &&
+                                    itemMap['subtotal'] is num &&
+                                    itemMap['subtotal'] > 0)
+                                ? ((itemMap['taxAmount'] as num).toDouble() /
+                                    (itemMap['subtotal'] as num).toDouble() *
+                                    100)
+                                : double.tryParse(
+                                      itemMap['tax']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'tax_amount':
+                            (itemMap['taxAmount'] is num)
+                                ? (itemMap['taxAmount'] as num).toDouble()
+                                : double.tryParse(
+                                      itemMap['taxAmount']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'subtotal':
+                            (itemMap['subtotal'] is num)
+                                ? (itemMap['subtotal'] as num).toDouble()
+                                : double.tryParse(
+                                      itemMap['subtotal']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'total':
+                            (itemMap['total'] is num)
+                                ? (itemMap['total'] as num).toDouble()
+                                : double.tryParse(
+                                      itemMap['total']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
+                        'notes': itemMap['notes']?.toString(),
+                      };
+                      return CartItemModel.fromJson(transformedItem);
+                    }
                   }
                   return null;
                 } catch (e) {
                   print('⚠️ Error parsing cart item: $e');
+                  print('   Item data: $item');
                   return null;
                 }
               })
@@ -229,21 +345,45 @@ class SaleModel extends Equatable {
                   : DateTime.now()),
       totalCost:
           json['total_cost'] != null
-              ? (json['total_cost'] as num).toDouble()
+              ? (json['total_cost'] is num
+                  ? (json['total_cost'] as num).toDouble()
+                  : double.tryParse(json['total_cost']?.toString() ?? '0'))
               : null,
       grossProfit:
           json['gross_profit'] != null
-              ? (json['gross_profit'] as num).toDouble()
+              ? (json['gross_profit'] is num
+                  ? (json['gross_profit'] as num).toDouble()
+                  : double.tryParse(json['gross_profit']?.toString() ?? '0'))
               : null,
       profitMargin:
           json['profit_margin'] != null
-              ? (json['profit_margin'] as num).toDouble()
+              ? (json['profit_margin'] is num
+                  ? (json['profit_margin'] as num).toDouble()
+                  : double.tryParse(json['profit_margin']?.toString() ?? '0'))
               : null,
       cashierLocation: json['cashier_location']?.toString(),
       deviceInfo:
           json['device_info'] != null
               ? Map<String, dynamic>.from(json['device_info'] as Map)
               : null,
+      returns:
+          (json['returns'] as List?)
+              ?.map((ret) {
+                try {
+                  return SaleReturnModel.fromJson(
+                    ret is Map<String, dynamic>
+                        ? ret
+                        : Map<String, dynamic>.from(ret as Map),
+                  );
+                } catch (e) {
+                  print('⚠️ Error parsing return: $e');
+                  return null;
+                }
+              })
+              .where((ret) => ret != null)
+              .cast<SaleReturnModel>()
+              .toList() ??
+          [],
     );
   }
 
@@ -279,6 +419,7 @@ class SaleModel extends Equatable {
   SaleModel copyWith({
     String? id,
     String? invoiceNumber,
+    int? branchId,
     DateTime? transactionDate,
     List<CartItemModel>? items,
     double? subtotal,
@@ -301,10 +442,12 @@ class SaleModel extends Equatable {
     double? profitMargin,
     String? cashierLocation,
     Map<String, dynamic>? deviceInfo,
+    List<SaleReturnModel>? returns,
   }) {
     return SaleModel(
       id: id ?? this.id,
       invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      branchId: branchId ?? this.branchId,
       transactionDate: transactionDate ?? this.transactionDate,
       items: items ?? this.items,
       subtotal: subtotal ?? this.subtotal,
@@ -327,6 +470,7 @@ class SaleModel extends Equatable {
       profitMargin: profitMargin ?? this.profitMargin,
       cashierLocation: cashierLocation ?? this.cashierLocation,
       deviceInfo: deviceInfo ?? this.deviceInfo,
+      returns: returns ?? this.returns,
     );
   }
 
@@ -334,6 +478,7 @@ class SaleModel extends Equatable {
   List<Object?> get props => [
     id,
     invoiceNumber,
+    branchId,
     transactionDate,
     items,
     subtotal,
@@ -356,5 +501,18 @@ class SaleModel extends Equatable {
     profitMargin,
     cashierLocation,
     deviceInfo,
+    returns,
   ];
+
+  // Helper method to calculate net total after returns
+  double get netTotal {
+    final totalReturns = returns.fold<double>(
+      0.0,
+      (sum, ret) => sum + ret.refundAmount,
+    );
+    return total - totalReturns;
+  }
+
+  // Helper method to check if sale has returns
+  bool get hasReturns => returns.isNotEmpty;
 }

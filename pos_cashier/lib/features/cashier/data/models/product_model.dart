@@ -7,7 +7,8 @@ class ProductModel extends Equatable {
   final String name;
   final String? description;
   final double price;
-  final int stock;
+  final double costPrice; // ✅ ADDED: Cost price untuk profit calculation
+  final double stock;
   final String? categoryId;
   final String? categoryName;
   final String? imageUrl;
@@ -22,6 +23,7 @@ class ProductModel extends Equatable {
     required this.name,
     this.description,
     required this.price,
+    this.costPrice = 0, // ✅ Default to 0 if not provided
     required this.stock,
     this.categoryId,
     this.categoryName,
@@ -39,6 +41,9 @@ class ProductModel extends Equatable {
       name: json['name']?.toString() ?? '',
       description: json['description']?.toString(),
       price: _parsePrice(json['selling_price'] ?? json['price']),
+      costPrice: _parsePrice(
+        json['cost_price'] ?? json['costPrice'],
+      ), // ✅ ADDED
       stock: _parseStock(
         json['stock_quantity'] ?? json['available_quantity'] ?? json['stock'],
       ),
@@ -65,10 +70,10 @@ class ProductModel extends Equatable {
     return 0.0;
   }
 
-  static int _parseStock(dynamic value) {
+  static double _parseStock(dynamic value) {
     if (value == null) return 0;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
     return 0;
   }
 
@@ -79,6 +84,7 @@ class ProductModel extends Equatable {
       'name': name,
       'description': description,
       'price': price,
+      'cost_price': costPrice, // ✅ ADDED
       'stock': stock,
       'category_id': categoryId,
       'category_name': categoryName,
@@ -96,7 +102,8 @@ class ProductModel extends Equatable {
     String? name,
     String? description,
     double? price,
-    int? stock,
+    double? costPrice, // ✅ ADDED
+    double? stock,
     String? categoryId,
     String? categoryName,
     String? imageUrl,
@@ -111,6 +118,7 @@ class ProductModel extends Equatable {
       name: name ?? this.name,
       description: description ?? this.description,
       price: price ?? this.price,
+      costPrice: costPrice ?? this.costPrice, // ✅ ADDED
       stock: stock ?? this.stock,
       categoryId: categoryId ?? this.categoryId,
       categoryName: categoryName ?? this.categoryName,
@@ -129,6 +137,7 @@ class ProductModel extends Equatable {
     name,
     description,
     price,
+    costPrice, // ✅ ADDED
     stock,
     categoryId,
     categoryName,

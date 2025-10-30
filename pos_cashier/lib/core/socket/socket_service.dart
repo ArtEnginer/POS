@@ -25,6 +25,11 @@ class SocketService {
 
   SocketService(this._hiveService);
 
+  /// Trigger data update manually (untuk sync events)
+  void triggerDataUpdate(String eventType) {
+    _dataUpdateController.add(eventType);
+  }
+
   /// Connect ke Socket.IO server
   Future<void> connect() async {
     if (_isConnected && _socket != null) {

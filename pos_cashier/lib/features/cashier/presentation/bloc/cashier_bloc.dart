@@ -16,7 +16,7 @@ abstract class CashierEvent extends Equatable {
 
 class AddToCart extends CashierEvent {
   final ProductModel product;
-  final int quantity;
+  final double quantity;
 
   AddToCart({required this.product, this.quantity = 1});
 
@@ -35,7 +35,7 @@ class RemoveFromCart extends CashierEvent {
 
 class UpdateCartItemQuantity extends CashierEvent {
   final String productId;
-  final int quantity;
+  final double quantity;
 
   UpdateCartItemQuantity({required this.productId, required this.quantity});
 

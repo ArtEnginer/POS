@@ -4,10 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/models/product_model.dart';
 import '../../data/models/cart_item_model.dart';
 import '../../data/models/pending_sale_model.dart';
-import '../../data/services/pending_sales_service.dart';
 import '../bloc/cashier_bloc.dart';
 import '../widgets/pending_sales_dialog.dart';
-import '../widgets/sales_return_dialog.dart';
+import 'sales_history_page.dart'; // Sales History Page
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/database/hive_service.dart';
 import '../../../../main.dart';
@@ -158,11 +157,11 @@ class _CashierPageState extends State<CashierPage> {
             tooltip: 'Transaksi Pending',
           ),
 
-          // Return Penjualan - NEW FEATURE
+          // Riwayat Penjualan - NEW FEATURE
           IconButton(
-            icon: const Icon(Icons.assignment_return, color: Colors.white),
-            onPressed: _showSalesReturn,
-            tooltip: 'Return Penjualan',
+            icon: const Icon(Icons.history, color: Colors.white),
+            onPressed: _showSalesHistory,
+            tooltip: 'Riwayat Penjualan',
           ),
 
           // Visual Divider
@@ -1256,7 +1255,7 @@ class _CashierPageState extends State<CashierPage> {
     );
   }
 
-  TableRow _buildTableRow(CartItemModel item, int number) {
+  TableRow _buildTableRow(CartItemModel item, double number) {
     // Create controllers for this specific item
     final discountController = TextEditingController(
       text: item.discount > 0 ? item.discount.toStringAsFixed(0) : '',
@@ -1576,17 +1575,12 @@ class _CashierPageState extends State<CashierPage> {
     );
   }
 
-  /// Show sales return dialog
-  void _showSalesReturn() {
-    showDialog(
-      context: context,
-      builder: (context) => const SalesReturnDialog(),
-    ).then((result) {
-      if (result != null) {
-        // Refresh UI if needed
-        setState(() {});
-      }
-    });
+  /// Show sales history page
+  void _showSalesHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SalesHistoryPage()),
+    );
   }
 
   /// Load pending sale to cart

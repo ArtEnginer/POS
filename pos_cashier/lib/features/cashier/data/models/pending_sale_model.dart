@@ -106,7 +106,7 @@ class PendingSaleItem {
   final String productId;
   final String productName;
   final String? sku;
-  final int quantity;
+  final double quantity;
   final double price; // Harga satuan
   final double subtotal; // Total per item (price * quantity)
   final double discount; // Diskon per item
@@ -153,7 +153,7 @@ class PendingSaleItem {
     String? productId,
     String? productName,
     String? sku,
-    int? quantity,
+    double? quantity,
     double? price,
     double? subtotal,
     double? discount,

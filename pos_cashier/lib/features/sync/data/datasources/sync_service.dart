@@ -288,6 +288,9 @@ class SyncService {
             syncedCount: count,
           ),
         );
+
+        // ✅ NOTIFY UI: Produk sudah di-download, refresh UI!
+        _socketService.triggerDataUpdate('product:synced');
       } else {
         print('⚠️ No products downloaded');
 
@@ -500,6 +503,9 @@ class SyncService {
             syncedCount: count,
           ),
         );
+
+        // ✅ NOTIFY UI: Produk sudah di-download, refresh UI!
+        _socketService.triggerDataUpdate('product:synced');
 
         return true;
       } else {

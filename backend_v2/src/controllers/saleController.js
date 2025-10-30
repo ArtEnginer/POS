@@ -61,8 +61,8 @@ export const getAllSales = async (req, res) => {
     paramIndex++;
   }
 
-  // Get total count
-  const countQuery = `SELECT COUNT(*) FROM (${query}) s`;
+  // Get total count (fixed: use different alias to avoid conflict)
+  const countQuery = `SELECT COUNT(*) FROM (${query}) AS sales_count`;
   const countResult = await db.query(countQuery, params);
   const total = parseInt(countResult.rows[0].count);
 
@@ -74,15 +74,117 @@ export const getAllSales = async (req, res) => {
 
   const result = await db.query(query, params);
 
+  // Fetch items for each sale
+  const salesWithItems = await Promise.all(
+    result.rows.map(async (sale) => {
+      const itemsResult = await db.query(
+        `SELECT si.*, p.name as product_name, p.sku
+         FROM sale_items si
+         LEFT JOIN products p ON si.product_id = p.id
+         WHERE si.sale_id = $1
+         ORDER BY si.id`,
+        [sale.id]
+      );
+
+      // Fetch returns for this sale
+      const returnsResult = await db.query(
+        `SELECT sr.*, 
+                u.full_name as processed_by_name,
+                (SELECT JSON_AGG(
+                  JSON_BUILD_OBJECT(
+                    'id', ri.id,
+                    'productId', ri.product_id,
+                    'productName', ri.product_name,
+                    'quantity', ri.quantity,
+                    'unitPrice', ri.unit_price,
+                    'subtotal', ri.subtotal
+                  )
+                ) FROM return_items ri
+                  WHERE ri.return_id = sr.id
+                ) as items
+         FROM sales_returns sr
+         LEFT JOIN users u ON sr.processed_by_user_id = u.id
+         WHERE sr.original_sale_id = $1 AND sr.status IN ('processed', 'completed')
+         ORDER BY sr.return_date DESC`,
+        [sale.id]
+      );
+
+      return {
+        id: sale.id,
+        invoiceNumber: sale.sale_number,
+        branchId: sale.branch_id,
+        branchName: sale.branch_name,
+        customerId: sale.customer_id,
+        customerName: sale.customer_name,
+        cashierId: sale.cashier_id,
+        cashierName: sale.cashier_name,
+        createdAt: sale.sale_date || sale.created_at,
+        status: sale.status,
+
+        // Financial details
+        subtotal: parseFloat(sale.subtotal),
+        discount: parseFloat(sale.discount_amount || 0),
+        discountPercentage: parseFloat(sale.discount_percentage || 0),
+        tax: parseFloat(sale.tax_amount || 0),
+        total: parseFloat(sale.total_amount),
+        paidAmount: parseFloat(sale.paid_amount || 0),
+        changeAmount: parseFloat(sale.change_amount || 0),
+
+        // Cost & Profit
+        totalCost: parseFloat(sale.total_cost || 0),
+        grossProfit: parseFloat(sale.gross_profit || 0),
+        profitMargin: parseFloat(sale.profit_margin || 0),
+
+        // Payment
+        paymentMethod: sale.payment_method,
+        paymentReference: sale.payment_reference,
+
+        // Additional info
+        notes: sale.notes,
+        cashierLocation: sale.cashier_location,
+        deviceInfo: sale.device_info,
+
+        // Items with complete details
+        items: itemsResult.rows.map((item) => ({
+          productId: item.product_id,
+          productName: item.product_name,
+          sku: item.sku,
+          quantity: parseFloat(item.quantity),
+          unitPrice: parseFloat(item.unit_price),
+          discountAmount: parseFloat(item.discount_amount || 0),
+          discountPercentage: parseFloat(item.discount_percentage || 0),
+          taxAmount: parseFloat(item.tax_amount || 0),
+          taxPercentage: parseFloat(item.tax_percentage || 0), // ← ADDED
+          subtotal: parseFloat(item.subtotal),
+          total: parseFloat(item.total),
+          costPrice: parseFloat(item.cost_price || 0),
+          totalCost: parseFloat(item.total_cost || 0),
+          itemProfit: parseFloat(item.item_profit || 0),
+          notes: item.notes,
+        })),
+
+        // Returns data
+        returns: returnsResult.rows.map((ret) => ({
+          id: ret.id,
+          returnNumber: ret.return_number,
+          returnDate: ret.return_date,
+          reason: ret.return_reason,
+          refundAmount: parseFloat(ret.total_refund || 0),
+          status: ret.status,
+          processedBy: ret.processed_by_user_id,
+          processedByName: ret.processed_by_name,
+          items: ret.items || [],
+        })),
+      };
+    })
+  );
+
   res.json({
     success: true,
-    data: result.rows,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
+    data: salesWithItems,
+    total,
+    page: parseInt(page),
+    limit: parseInt(limit),
   });
 };
 
@@ -277,9 +379,9 @@ export const createSale = async (req, res) => {
       await client.query(
         `INSERT INTO sale_items (
           sale_id, branch_id, product_id, product_name, sku, quantity,
-          unit_price, cost_price, discount_amount, discount_percentage, tax_amount,
-          subtotal, total, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          unit_price, cost_price, discount_amount, discount_percentage, 
+          tax_amount, tax_percentage, subtotal, total, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           sale.id,
           branchId, // ← ADDED: branch_id for sale_items
@@ -292,6 +394,7 @@ export const createSale = async (req, res) => {
           item.discountAmount || 0,
           item.discountPercentage || 0,
           item.taxAmount || 0,
+          item.taxPercentage || 0, // ← ADDED: tax_percentage
           item.subtotal,
           item.total,
           item.notes,

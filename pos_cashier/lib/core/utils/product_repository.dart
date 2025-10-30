@@ -336,7 +336,7 @@ class ProductRepository {
   }
 
   /// Update product stock locally
-  Future<void> updateProductStock(String productId, int newStock) async {
+  Future<void> updateProductStock(String productId, double newStock) async {
     try {
       final product = getProductById(productId);
       if (product != null) {

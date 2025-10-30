@@ -225,6 +225,45 @@ class ApiService {
   /// Sync sale to server (Backend V2 format)
   Future<bool> syncSale(Map<String, dynamic> saleData) async {
     try {
+      print('\n🔍 ═══════════════════════════════════════════════════════════');
+      print('🔍 ORIGINAL SALE DATA (BEFORE TRANSFORM):');
+      print('🔍 ═══════════════════════════════════════════════════════════');
+      print('Invoice Number: ${saleData['invoice_number']}');
+      print(
+        'Customer ID: ${saleData['customer_id']} (type: ${saleData['customer_id'].runtimeType})',
+      );
+      print('Payment Method: ${saleData['payment_method']}');
+      print('Subtotal: ${saleData['subtotal']}');
+      print('Discount: ${saleData['discount']}');
+      print('Tax: ${saleData['tax']}');
+      print('Total: ${saleData['total']}');
+      print('Paid: ${saleData['paid']}');
+      print('Change: ${saleData['change']}');
+      print('Note: ${saleData['note']}');
+      print('Cashier Location: ${saleData['cashier_location']}');
+      print('Device Info: ${saleData['device_info']}');
+
+      print('\n📦 ORIGINAL ITEMS:');
+      final originalItems = saleData['items'] as List;
+      for (var i = 0; i < originalItems.length; i++) {
+        final item = originalItems[i];
+        final product = item['product'];
+        print('  Item ${i + 1}:');
+        print(
+          '    Product ID: ${product['id']} (type: ${product['id'].runtimeType})',
+        );
+        print('    Product Name: ${product['name']}');
+        print('    Product Barcode: ${product['barcode']}');
+        print('    Product Price: ${product['price']}');
+        print('    Product Cost Price: ${product['cost_price']}');
+        print('    Quantity: ${item['quantity']}');
+        print('    Discount: ${item['discount']}%');
+        print('    Tax Percent: ${item['tax_percent']}%'); // ← ADDED
+        print('    Tax Amount: ${item['tax_amount']}'); // ← ADDED
+        print('    Note: ${item['note']}');
+      }
+      print('🔍 ═══════════════════════════════════════════════════════════\n');
+
       // Transform sale data to match backend format
       final items =
           (saleData['items'] as List).map((item) {
@@ -234,32 +273,82 @@ class ApiService {
             final unitPrice = (product['price'] ?? 0).toDouble();
             final costPrice = (product['cost_price'] ?? 0).toDouble();
             final discountPercentage = (item['discount'] ?? 0).toDouble();
+            final taxPercentage =
+                (item['tax_percent'] ?? 0).toDouble(); // ← ADDED
 
             final itemSubtotal = unitPrice * quantity;
             final itemDiscountAmount =
                 itemSubtotal * (discountPercentage / 100);
-            final itemTotal = itemSubtotal - itemDiscountAmount;
+            final afterDiscount = itemSubtotal - itemDiscountAmount;
+            final itemTaxAmount =
+                afterDiscount * (taxPercentage / 100); // ← ADDED
+            final itemTotal = afterDiscount + itemTaxAmount; // ← UPDATED
+
+            // ✅ FIX: Ensure productId is valid integer
+            final productIdRaw = product['id'];
+            int? productIdValue;
+
+            if (productIdRaw != null && productIdRaw.toString().isNotEmpty) {
+              productIdValue = int.tryParse(productIdRaw.toString());
+              if (productIdValue == null) {
+                print('⚠️ Invalid productId: $productIdRaw');
+                throw Exception('Invalid productId: $productIdRaw');
+              }
+            } else {
+              print('❌ Product ID is missing!');
+              throw Exception('Product ID is required but missing');
+            }
 
             return {
-              'productId': product['id'],
-              'productName': product['name'],
+              'productId': productIdValue, // ✅ Validated integer (required)
+              'productName': product['name'] ?? '',
               'sku': product['barcode'] ?? product['sku'] ?? '',
               'quantity': quantity,
               'unitPrice': unitPrice,
-              'costPrice': costPrice, // ← ADDED
+              'costPrice': costPrice,
               'discountAmount': itemDiscountAmount,
               'discountPercentage': discountPercentage,
-              'taxAmount': 0,
+              'taxAmount': itemTaxAmount, // ← FIXED: Use calculated value
+              'taxPercentage': taxPercentage, // ← ADDED
               'subtotal': itemSubtotal,
               'total': itemTotal,
-              'notes': item['note'],
+              'notes': item['note'] ?? '',
             };
           }).toList();
 
+      // ✅ FIX: Convert customerId - optional field, null is valid
+      final customerIdRaw = saleData['customer_id'];
+      int? customerIdValue;
+
+      if (customerIdRaw != null &&
+          customerIdRaw.toString().isNotEmpty &&
+          customerIdRaw.toString() != 'null') {
+        customerIdValue = int.tryParse(customerIdRaw.toString());
+        // If parsing fails, log warning but continue (customer is optional)
+        if (customerIdValue == null) {
+          print('⚠️ Invalid customerId: $customerIdRaw, setting to null');
+        }
+      }
+
+      // ✅ FIX: Ensure branchId is valid integer (required!)
+      final branchIdRaw = AppConstants.currentBranchId;
+      int? branchIdValue;
+
+      if (branchIdRaw != null && branchIdRaw.isNotEmpty) {
+        branchIdValue = int.tryParse(branchIdRaw);
+        if (branchIdValue == null) {
+          print('❌ Invalid branchId: $branchIdRaw');
+          throw Exception('Invalid branchId: $branchIdRaw');
+        }
+      } else {
+        print('❌ Branch ID is missing!');
+        throw Exception('Branch ID is required but missing');
+      }
+
       final transformedData = {
         'saleNumber': saleData['invoice_number'],
-        'branchId': AppConstants.currentBranchId,
-        'customerId': saleData['customer_id'],
+        'branchId': branchIdValue, // ✅ Validated integer (required)
+        'customerId': customerIdValue, // ✅ Validated integer or null (optional)
         'items': items,
         'subtotal': saleData['subtotal'],
         'discountAmount': saleData['discount'],
@@ -277,17 +366,67 @@ class ApiService {
 
       print('📤 Sending sale to server: ${transformedData['saleNumber']}');
       print(
-        '   Items: ${items.length}, Total: ${transformedData['totalAmount']}',
+        '   Branch ID: ${transformedData['branchId']} (type: ${transformedData['branchId'].runtimeType})',
       );
+      print(
+        '   Customer ID: ${transformedData['customerId']} (type: ${transformedData['customerId'].runtimeType})',
+      );
+      print('   Payment Method: ${transformedData['paymentMethod']}');
+      print('   Items Count: ${items.length}');
+      print('   Subtotal: ${transformedData['subtotal']}');
+      print('   Discount: ${transformedData['discountAmount']}');
+      print('   Tax: ${transformedData['taxAmount']}');
+      print('   Total: ${transformedData['totalAmount']}');
+      print('   Paid: ${transformedData['paidAmount']}');
+      print('   Change: ${transformedData['changeAmount']}');
+
+      // Debug: Print ALL items details
+      print('\n📦 Items Details (AFTER TRANSFORM):');
+      for (var i = 0; i < items.length; i++) {
+        final item = items[i];
+        print('   Item ${i + 1}:');
+        print(
+          '     - ProductID: ${item['productId']} (type: ${item['productId'].runtimeType})',
+        );
+        print('     - Name: ${item['productName']}');
+        print('     - SKU: ${item['sku']}');
+        print('     - Quantity: ${item['quantity']}');
+        print('     - Unit Price: ${item['unitPrice']}');
+        print('     - Cost Price: ${item['costPrice']}');
+        print('     - Discount %: ${item['discountPercentage']}');
+        print('     - Discount Amount: ${item['discountAmount']}');
+        print('     - Tax %: ${item['taxPercentage']}'); // ← ADDED
+        print('     - Tax Amount: ${item['taxAmount']}'); // ← ADDED
+        print('     - Subtotal: ${item['subtotal']}');
+        print('     - Total: ${item['total']}');
+      }
+
+      print('\n📋 FULL REQUEST DATA:');
+      print('═══════════════════════════════════════════════════════════');
+      print(transformedData);
+      print('═══════════════════════════════════════════════════════════\n');
 
       final response = await _dio.post(
         AppConstants.salesEndpoint,
         data: transformedData,
       );
 
+      print('\n✅ ═══════════════════════════════════════════════════════════');
+      print('✅ SERVER RESPONSE:');
+      print('✅ ═══════════════════════════════════════════════════════════');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data:');
+      print(response.data);
+      print('✅ ═══════════════════════════════════════════════════════════\n');
+
       return response.statusCode == 200 || response.statusCode == 201;
     } catch (e) {
-      print('Error syncing sale: $e');
+      print('\n❌ ═══════════════════════════════════════════════════════════');
+      print('❌ ERROR SYNCING SALE:');
+      print('❌ ═══════════════════════════════════════════════════════════');
+      print('Error Type: ${e.runtimeType}');
+      print('Error Message: $e');
+      print('❌ ═══════════════════════════════════════════════════════════\n');
       return false;
     }
   }

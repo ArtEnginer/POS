@@ -4,7 +4,7 @@ import 'product_model.dart';
 /// Cart item model
 class CartItemModel extends Equatable {
   final ProductModel product;
-  final int quantity;
+  final double quantity;
   final double discount;
   final double taxPercent; // PPN per item
   final String? note;
@@ -34,7 +34,7 @@ class CartItemModel extends Equatable {
 
   CartItemModel copyWith({
     ProductModel? product,
-    int? quantity,
+    double? quantity,
     double? discount,
     double? taxPercent,
     String? note,
@@ -73,9 +73,18 @@ class CartItemModel extends Equatable {
 
     return CartItemModel(
       product: product,
-      quantity: json['quantity'] ?? 1,
-      discount: (json['discount'] ?? 0).toDouble(),
-      taxPercent: (json['tax_percent'] ?? 0).toDouble(),
+      quantity:
+          (json['quantity'] is num)
+              ? (json['quantity'] as num).toDouble()
+              : double.tryParse(json['quantity']?.toString() ?? '1') ?? 1.0,
+      discount:
+          (json['discount'] is num)
+              ? (json['discount'] as num).toDouble()
+              : double.tryParse(json['discount']?.toString() ?? '0') ?? 0.0,
+      taxPercent:
+          (json['tax_percent'] is num)
+              ? (json['tax_percent'] as num).toDouble()
+              : double.tryParse(json['tax_percent']?.toString() ?? '0') ?? 0.0,
       note: json['note']?.toString(),
     );
     // Note: subtotal, total, discount_amount, tax_amount are calculated properties, not stored

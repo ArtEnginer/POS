@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../../data/models/sale_model.dart';
 import '../../data/models/sales_return_model.dart';
 import '../../../../core/utils/currency_formatter.dart';
@@ -16,14 +20,25 @@ class SalesReturnDialog extends StatefulWidget {
 class _SalesReturnDialogState extends State<SalesReturnDialog> {
   List<SaleModel> _recentSales = [];
   SaleModel? _selectedSale;
-  final Map<String, int> _returnQuantities = {}; // productId -> quantity
+  final Map<String, double> _returnQuantities =
+      {}; // productId -> quantity (DECIMAL)
   final Map<String, TextEditingController> _quantityControllers = {};
   final _reasonController = TextEditingController();
+  final _searchController = TextEditingController();
   String _selectedRefundMethod = 'cash';
   bool _isProcessing = false;
   bool _isLoadingSales = false;
   String? _errorMessage;
   bool _hasLoadedData = false;
+
+  // Pagination
+  int _currentPage = 1;
+  final int _pageSize = 10;
+  int _totalPages = 1;
+  String _searchQuery = '';
+
+  // Return result for printing
+  Map<String, dynamic>? _returnResult;
 
   @override
   void initState() {
@@ -197,8 +212,8 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
     });
   }
 
-  void _updateReturnQuantity(String productId, int maxQty, String value) {
-    final qty = int.tryParse(value) ?? 0;
+  void _updateReturnQuantity(String productId, double maxQty, String value) {
+    final qty = double.tryParse(value) ?? 0;
     setState(() {
       if (qty > 0 && qty <= maxQty) {
         _returnQuantities[productId] = qty;

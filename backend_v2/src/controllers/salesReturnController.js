@@ -61,7 +61,7 @@ export const createReturn = async (req, res) => {
 
     // Verify sale exists and belongs to the branch
     const saleCheck = await client.query(
-      "SELECT id, branch_id, invoice_number FROM sales WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT id, branch_id, sale_number FROM sales WHERE id = $1 AND deleted_at IS NULL",
       [originalSaleId]
     );
 
@@ -72,10 +72,19 @@ export const createReturn = async (req, res) => {
       });
     }
 
-    if (saleCheck.rows[0].branch_id !== branchId) {
+    // Convert both to integers for comparison
+    const saleBranchId = parseInt(saleCheck.rows[0].branch_id);
+    const requestBranchId = parseInt(branchId);
+
+    console.log(
+      `🔍 Branch comparison - Sale: ${saleBranchId}, Request: ${requestBranchId}`
+    );
+
+    if (saleBranchId !== requestBranchId) {
       return res.status(403).json({
         success: false,
         message: "Sale does not belong to this branch",
+        details: `Sale branch: ${saleBranchId}, Request branch: ${requestBranchId}`,
       });
     }
 
@@ -104,7 +113,7 @@ export const createReturn = async (req, res) => {
       [
         returnNumber,
         originalSaleId,
-        originalInvoiceNumber || saleCheck.rows[0].invoice_number,
+        originalInvoiceNumber || saleCheck.rows[0].sale_number,
         branchId,
         returnReason,
         totalRefund || 0,
@@ -145,12 +154,11 @@ export const createReturn = async (req, res) => {
 
       // Update product stock (add back returned quantity)
       await client.query(
-        `UPDATE products 
-         SET stock_quantity = stock_quantity + $1,
-             available_quantity = available_quantity + $1,
+        `UPDATE product_stocks 
+         SET quantity = quantity + $1,
              updated_at = NOW()
-         WHERE id = $2`,
-        [item.quantity, item.productId]
+         WHERE product_id = $2 AND branch_id = $3`,
+        [item.quantity, item.productId, branchId]
       );
     }
 
@@ -432,10 +440,28 @@ export const getReturnsBySaleId = async (req, res) => {
   }
 };
 
-// Get recent sales for return (last N days)
+// Get recent sales for return (with pagination and search)
 export const getRecentSalesForReturn = async (req, res) => {
   try {
-    const { days = 30, branchId } = req.query;
+    const {
+      days = 30,
+      branchId,
+      page = 1,
+      limit = 20,
+      search = "",
+    } = req.query;
+
+    console.log("📥 getRecentSalesForReturn params:", {
+      days,
+      branchId,
+      page,
+      limit,
+      search,
+      userRole: req.user?.role,
+      userBranchId: req.user?.branchId,
+    });
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // Build query
     let query = `
@@ -466,10 +492,13 @@ export const getRecentSalesForReturn = async (req, res) => {
               'sku', si.sku,
               'quantity', si.quantity,
               'unitPrice', si.unit_price,
-              'discount', si.discount_amount,
-              'tax', si.tax_amount,
+              'discountAmount', si.discount_amount,
+              'discountPercentage', si.discount_percentage,
+              'taxAmount', si.tax_amount,
+              'taxPercentage', si.tax_percentage,
               'subtotal', si.subtotal,
-              'total', si.total
+              'total', si.total,
+              'costPrice', si.cost_price
             )
           )
           FROM sale_items si
@@ -492,15 +521,42 @@ export const getRecentSalesForReturn = async (req, res) => {
       params.push(branchId);
       paramCount++;
     } else if (req.user.role === "cashier" && req.user.branchId) {
-      // Auto-filter by user's branch for cashier
       query += ` AND s.branch_id = $${paramCount}`;
       params.push(req.user.branchId);
       paramCount++;
     }
 
-    query += " ORDER BY s.sale_date DESC LIMIT 100";
+    // Search filter
+    if (search && search.trim() !== "") {
+      query += ` AND (
+        s.sale_number ILIKE $${paramCount} OR
+        c.name ILIKE $${paramCount} OR
+        u.full_name ILIKE $${paramCount}
+      )`;
+      params.push(`%${search.trim()}%`);
+      paramCount++;
+    }
 
+    // Count total records (before pagination)
+    const countQuery = query.replace(
+      /SELECT .* FROM sales s/,
+      "SELECT COUNT(DISTINCT s.id) FROM sales s"
+    );
+    const countResult = await db.query(countQuery, params);
+    const totalRecords = parseInt(countResult.rows[0].count);
+
+    // Add sorting and pagination
+    query += ` ORDER BY s.sale_date DESC LIMIT $${paramCount} OFFSET $${
+      paramCount + 1
+    }`;
+    params.push(parseInt(limit), offset);
+
+    console.log("📊 Executing query with params:", params);
     const result = await db.query(query, params);
+
+    console.log(
+      `✅ Found ${result.rows.length} sales out of ${totalRecords} total`
+    );
 
     // Transform to match frontend model
     const sales = result.rows.map((row) => ({
@@ -511,16 +567,48 @@ export const getRecentSalesForReturn = async (req, res) => {
       customerName: row.customer_name || "Walk-in Customer",
       cashierId: row.cashier_id.toString(),
       cashierName: row.cashier_name,
+
+      // Financial details - LENGKAP
       subtotal: parseFloat(row.subtotal),
-      discount: parseFloat(row.discount_amount),
-      tax: parseFloat(row.tax_amount),
+      discount: parseFloat(row.discount_amount || 0),
+      discountPercentage: parseFloat(row.discount_percentage || 0),
+      tax: parseFloat(row.tax_amount || 0),
       total: parseFloat(row.total_amount),
+      paidAmount: parseFloat(row.paid_amount || 0),
+      changeAmount: parseFloat(row.change_amount || 0),
+
+      // Cost & Profit
+      totalCost: parseFloat(row.total_cost || 0),
+      grossProfit: parseFloat(row.gross_profit || 0),
+      profitMargin: parseFloat(row.profit_margin || 0),
+
+      // Payment & Status
       paymentMethod: row.payment_method,
-      paidAmount: parseFloat(row.paid_amount),
-      changeAmount: parseFloat(row.change_amount),
+      paymentReference: row.payment_reference,
       status: row.status,
+
+      // Additional info
       notes: row.notes,
-      items: row.items || [],
+      cashierLocation: row.cashier_location,
+      deviceInfo: row.device_info,
+
+      // Items with complete details
+      items: (row.items || []).map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        sku: item.sku,
+        quantity: parseFloat(item.quantity),
+        unitPrice: parseFloat(item.unitPrice),
+        discountAmount: parseFloat(item.discountAmount || 0),
+        discountPercentage: parseFloat(item.discountPercentage || 0),
+        taxAmount: parseFloat(item.taxAmount || 0),
+        taxPercentage: parseFloat(item.taxPercentage || 0), // ← ADDED
+        subtotal: parseFloat(item.subtotal),
+        total: parseFloat(item.total || item.subtotal),
+        costPrice: parseFloat(item.costPrice || 0),
+        notes: item.notes,
+      })),
+
       createdAt: row.created_at,
       isSynced: true,
       syncedAt: row.created_at,
@@ -529,7 +617,10 @@ export const getRecentSalesForReturn = async (req, res) => {
     res.json({
       success: true,
       data: sales,
-      count: sales.length,
+      total: totalRecords,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalRecords / parseInt(limit)),
     });
   } catch (error) {
     console.error("Error getting recent sales:", error);
@@ -541,6 +632,94 @@ export const getRecentSalesForReturn = async (req, res) => {
   }
 };
 
+/**
+ * Delete return (soft delete)
+ */
+export const deleteReturn = async (req, res) => {
+  const client = await db.getClient();
+
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    console.log(`🗑️  Delete return request: ID=${id}, User=${userId}`);
+
+    await client.query("BEGIN");
+
+    // Get return details
+    const returnResult = await client.query(
+      `SELECT sr.*, 
+              (SELECT JSON_AGG(
+                JSON_BUILD_OBJECT(
+                  'product_id', ri.product_id,
+                  'quantity', ri.quantity
+                )
+              ) FROM return_items ri WHERE ri.return_id = sr.id) as items
+       FROM sales_returns sr
+       WHERE sr.id = $1 AND sr.deleted_at IS NULL`,
+      [id]
+    );
+
+    if (returnResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        success: false,
+        message: "Return not found",
+      });
+    }
+
+    const returnData = returnResult.rows[0];
+
+    // Check if already processed/completed
+    if (returnData.status === "completed") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete completed return",
+      });
+    }
+
+    // Restore stock for each item
+    if (returnData.items && Array.isArray(returnData.items)) {
+      for (const item of returnData.items) {
+        await client.query(
+          `UPDATE product_stocks
+           SET quantity = quantity - $1, updated_at = NOW()
+           WHERE product_id = $2 AND branch_id = $3`,
+          [item.quantity, item.product_id, returnData.branch_id]
+        );
+      }
+    }
+
+    // Soft delete return
+    await client.query(
+      `UPDATE sales_returns
+       SET deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [id]
+    );
+
+    await client.query("COMMIT");
+
+    console.log(`✅ Return ${id} deleted successfully`);
+
+    res.json({
+      success: true,
+      message: "Return deleted successfully",
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Error deleting return:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete return",
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+};
+
 export default {
   createReturn,
   getReturns,
@@ -548,4 +727,5 @@ export default {
   updateReturnStatus,
   getReturnsBySaleId,
   getRecentSalesForReturn,
+  deleteReturn,
 };
