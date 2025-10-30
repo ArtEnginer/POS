@@ -60,10 +60,16 @@ class SaleModel extends Equatable {
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     return SaleModel(
       id: json['id']?.toString() ?? '',
-      invoiceNumber: json['invoiceNumber']?.toString() ?? json['invoice_number']?.toString() ?? '',
-      transactionDate: json['createdAt'] != null 
-          ? DateTime.parse(json['createdAt']) 
-          : (json['transaction_date'] != null ? DateTime.parse(json['transaction_date']) : DateTime.now()),
+      invoiceNumber:
+          json['invoiceNumber']?.toString() ??
+          json['invoice_number']?.toString() ??
+          '',
+      transactionDate:
+          json['createdAt'] != null
+              ? DateTime.parse(json['createdAt'])
+              : (json['transaction_date'] != null
+                  ? DateTime.parse(json['transaction_date'])
+                  : DateTime.now()),
       items:
           (json['items'] as List?)
               ?.map((item) {
@@ -75,19 +81,35 @@ class SaleModel extends Equatable {
                         'id': item['productId']?.toString() ?? '',
                         'name': item['productName']?.toString() ?? '',
                         'sku': item['sku']?.toString() ?? '',
-                        'price': (item['unitPrice'] is num) 
-                            ? (item['unitPrice'] as num).toDouble() 
-                            : double.tryParse(item['unitPrice']?.toString() ?? '0') ?? 0.0,
+                        'price':
+                            (item['unitPrice'] is num)
+                                ? (item['unitPrice'] as num).toDouble()
+                                : double.tryParse(
+                                      item['unitPrice']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
                       },
-                      'quantity': (item['quantity'] is num) 
-                          ? (item['quantity'] as num).toInt() 
-                          : int.tryParse(item['quantity']?.toString() ?? '1') ?? 1,
-                      'discount': (item['discount'] is num) 
-                          ? (item['discount'] as num).toDouble() 
-                          : double.tryParse(item['discount']?.toString() ?? '0') ?? 0.0,
-                      'tax_percent': (item['tax'] is num) 
-                          ? (item['tax'] as num).toDouble() 
-                          : double.tryParse(item['tax']?.toString() ?? '0') ?? 0.0,
+                      'quantity':
+                          (item['quantity'] is num)
+                              ? (item['quantity'] as num).toInt()
+                              : int.tryParse(
+                                    item['quantity']?.toString() ?? '1',
+                                  ) ??
+                                  1,
+                      'discount':
+                          (item['discount'] is num)
+                              ? (item['discount'] as num).toDouble()
+                              : double.tryParse(
+                                    item['discount']?.toString() ?? '0',
+                                  ) ??
+                                  0.0,
+                      'tax_percent':
+                          (item['tax'] is num)
+                              ? (item['tax'] as num).toDouble()
+                              : double.tryParse(
+                                    item['tax']?.toString() ?? '0',
+                                  ) ??
+                                  0.0,
                     };
                     return CartItemModel.fromJson(transformedItem);
                   } else if (item is Map) {
@@ -97,19 +119,35 @@ class SaleModel extends Equatable {
                         'id': itemMap['productId']?.toString() ?? '',
                         'name': itemMap['productName']?.toString() ?? '',
                         'sku': itemMap['sku']?.toString() ?? '',
-                        'price': (itemMap['unitPrice'] is num) 
-                            ? (itemMap['unitPrice'] as num).toDouble() 
-                            : double.tryParse(itemMap['unitPrice']?.toString() ?? '0') ?? 0.0,
+                        'price':
+                            (itemMap['unitPrice'] is num)
+                                ? (itemMap['unitPrice'] as num).toDouble()
+                                : double.tryParse(
+                                      itemMap['unitPrice']?.toString() ?? '0',
+                                    ) ??
+                                    0.0,
                       },
-                      'quantity': (itemMap['quantity'] is num) 
-                          ? (itemMap['quantity'] as num).toInt() 
-                          : int.tryParse(itemMap['quantity']?.toString() ?? '1') ?? 1,
-                      'discount': (itemMap['discount'] is num) 
-                          ? (itemMap['discount'] as num).toDouble() 
-                          : double.tryParse(itemMap['discount']?.toString() ?? '0') ?? 0.0,
-                      'tax_percent': (itemMap['tax'] is num) 
-                          ? (itemMap['tax'] as num).toDouble() 
-                          : double.tryParse(itemMap['tax']?.toString() ?? '0') ?? 0.0,
+                      'quantity':
+                          (itemMap['quantity'] is num)
+                              ? (itemMap['quantity'] as num).toInt()
+                              : int.tryParse(
+                                    itemMap['quantity']?.toString() ?? '1',
+                                  ) ??
+                                  1,
+                      'discount':
+                          (itemMap['discount'] is num)
+                              ? (itemMap['discount'] as num).toDouble()
+                              : double.tryParse(
+                                    itemMap['discount']?.toString() ?? '0',
+                                  ) ??
+                                  0.0,
+                      'tax_percent':
+                          (itemMap['tax'] is num)
+                              ? (itemMap['tax'] as num).toDouble()
+                              : double.tryParse(
+                                    itemMap['tax']?.toString() ?? '0',
+                                  ) ??
+                                  0.0,
                     };
                     return CartItemModel.fromJson(transformedItem);
                   }
@@ -123,39 +161,66 @@ class SaleModel extends Equatable {
               .cast<CartItemModel>()
               .toList() ??
           [],
-      subtotal: (json['subtotal'] is num) 
-          ? (json['subtotal'] as num).toDouble() 
-          : double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
-      discount: (json['discount'] is num) 
-          ? (json['discount'] as num).toDouble() 
-          : double.tryParse(json['discount']?.toString() ?? '0') ?? 0.0,
-      tax: (json['tax'] is num) 
-          ? (json['tax'] as num).toDouble() 
-          : double.tryParse(json['tax']?.toString() ?? '0') ?? 0.0,
-      total: (json['total'] is num) 
-          ? (json['total'] as num).toDouble() 
-          : double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
-      paid: (json['paidAmount'] is num) 
-          ? (json['paidAmount'] as num).toDouble() 
-          : (json['paid'] is num) 
-              ? (json['paid'] as num).toDouble() 
-              : double.tryParse(json['paidAmount']?.toString() ?? json['paid']?.toString() ?? '0') ?? 0.0,
-      change: (json['changeAmount'] is num) 
-          ? (json['changeAmount'] as num).toDouble() 
-          : (json['change'] is num) 
-              ? (json['change'] as num).toDouble() 
-              : double.tryParse(json['changeAmount']?.toString() ?? json['change']?.toString() ?? '0') ?? 0.0,
-      paymentMethod: json['paymentMethod']?.toString() ?? json['payment_method']?.toString() ?? 'cash',
-      customerId: json['customerId']?.toString() ?? json['customer_id']?.toString(),
-      customerName: json['customerName']?.toString() ?? json['customer_name']?.toString(),
-      cashierId: json['cashierId']?.toString() ?? json['cashier_id']?.toString() ?? '',
-      cashierName: json['cashierName']?.toString() ?? json['cashier_name']?.toString() ?? '',
+      subtotal:
+          (json['subtotal'] is num)
+              ? (json['subtotal'] as num).toDouble()
+              : double.tryParse(json['subtotal']?.toString() ?? '0') ?? 0.0,
+      discount:
+          (json['discount'] is num)
+              ? (json['discount'] as num).toDouble()
+              : double.tryParse(json['discount']?.toString() ?? '0') ?? 0.0,
+      tax:
+          (json['tax'] is num)
+              ? (json['tax'] as num).toDouble()
+              : double.tryParse(json['tax']?.toString() ?? '0') ?? 0.0,
+      total:
+          (json['total'] is num)
+              ? (json['total'] as num).toDouble()
+              : double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      paid:
+          (json['paidAmount'] is num)
+              ? (json['paidAmount'] as num).toDouble()
+              : (json['paid'] is num)
+              ? (json['paid'] as num).toDouble()
+              : double.tryParse(
+                    json['paidAmount']?.toString() ??
+                        json['paid']?.toString() ??
+                        '0',
+                  ) ??
+                  0.0,
+      change:
+          (json['changeAmount'] is num)
+              ? (json['changeAmount'] as num).toDouble()
+              : (json['change'] is num)
+              ? (json['change'] as num).toDouble()
+              : double.tryParse(
+                    json['changeAmount']?.toString() ??
+                        json['change']?.toString() ??
+                        '0',
+                  ) ??
+                  0.0,
+      paymentMethod:
+          json['paymentMethod']?.toString() ??
+          json['payment_method']?.toString() ??
+          'cash',
+      customerId:
+          json['customerId']?.toString() ?? json['customer_id']?.toString(),
+      customerName:
+          json['customerName']?.toString() ?? json['customer_name']?.toString(),
+      cashierId:
+          json['cashierId']?.toString() ?? json['cashier_id']?.toString() ?? '',
+      cashierName:
+          json['cashierName']?.toString() ??
+          json['cashier_name']?.toString() ??
+          '',
       note: json['notes']?.toString() ?? json['note']?.toString(),
       isSynced: json['isSynced'] ?? json['is_synced'] ?? true,
       syncedAt:
-          json['syncedAt'] != null 
-              ? DateTime.parse(json['syncedAt']) 
-              : (json['synced_at'] != null ? DateTime.parse(json['synced_at']) : null),
+          json['syncedAt'] != null
+              ? DateTime.parse(json['syncedAt'])
+              : (json['synced_at'] != null
+                  ? DateTime.parse(json['synced_at'])
+                  : null),
       createdAt:
           json['createdAt'] != null
               ? DateTime.parse(json['createdAt'])

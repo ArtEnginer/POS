@@ -190,38 +190,39 @@ class _CashierPageState extends State<CashierPage> {
                   break;
               }
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'cashier_settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.store, size: 20),
-                    SizedBox(width: 12),
-                    Text('Pengaturan Kasir'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'sync_settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.sync, size: 20),
-                    SizedBox(width: 12),
-                    Text('Pengaturan Sinkronisasi'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'server_settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.dns, size: 20),
-                    SizedBox(width: 12),
-                    Text('Pengaturan Server'),
-                  ],
-                ),
-              ),
-            ],
+            itemBuilder:
+                (context) => [
+                  const PopupMenuItem(
+                    value: 'cashier_settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.store, size: 20),
+                        SizedBox(width: 12),
+                        Text('Pengaturan Kasir'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'sync_settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.sync, size: 20),
+                        SizedBox(width: 12),
+                        Text('Pengaturan Sinkronisasi'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'server_settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.dns, size: 20),
+                        SizedBox(width: 12),
+                        Text('Pengaturan Server'),
+                      ],
+                    ),
+                  ),
+                ],
           ),
 
           // Visual Divider
