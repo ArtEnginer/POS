@@ -3,6 +3,7 @@ import express from "express";
 // Import route modules
 import productRoutes from "./productRoutes.js";
 import categoryRoutes from "./categoryRoutes.js";
+import unitRoutes from "./unitRoutes.js";
 import saleRoutes from "./saleRoutes.js";
 import purchaseRoutes from "./purchaseRoutes.js";
 import receivingRoutes from "./receivingRoutes.js";
@@ -31,6 +32,7 @@ router.get("/", (req, res) => {
       branches: "/branches",
       products: "/products",
       categories: "/categories",
+      units: "/units",
       customers: "/customers",
       suppliers: "/suppliers",
       sales: "/sales",
@@ -52,6 +54,7 @@ router.use("/branches", branchRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/products", productRoutes);
 router.use("/categories", categoryRoutes);
+router.use("/units", unitRoutes);
 router.use("/customers", customerRoutes);
 router.use("/suppliers", supplierRoutes);
 router.use("/sales", saleRoutes);

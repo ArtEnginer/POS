@@ -251,9 +251,12 @@ CREATE INDEX idx_product_stocks_product ON product_stocks(product_id);
 CREATE INDEX idx_product_stocks_branch ON product_stocks(branch_id);
 CREATE INDEX idx_product_stocks_available ON product_stocks(available_quantity);
 
+
 -- ============================================
 -- SECTION 4: CUSTOMER MANAGEMENT
 -- ============================================
+
+
 
 CREATE TYPE customer_type AS ENUM ('regular', 'vip', 'wholesale', 'retail');
 

@@ -12,6 +12,7 @@ import '../bloc/product_bloc.dart';
 import '../bloc/product_event.dart' as event;
 import '../bloc/product_state.dart';
 import 'category_list_page.dart';
+import '../../../unit/presentation/pages/unit_list_page.dart';
 
 class ProductFormPage extends StatefulWidget {
   final Product? product;
@@ -39,36 +40,76 @@ class _ProductFormPageState extends State<ProductFormPage> {
 
   late final ProductBloc _productBloc;
   String _selectedUnit = 'PCS';
+  List<String> _units = []; // Will be loaded from API
   List<Map<String, String>> _categories = [];
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isActive = true;
   bool _isLoading = false;
   bool _isLoadingCategories = false;
-
-  final List<String> _units = [
-    'PCS',
-    'KG',
-    'GRAM',
-    'LITER',
-    'ML',
-    'BOX',
-    'PACK',
-    'DUS',
-    'LUSIN',
-    'METER',
-  ];
+  bool _isLoadingUnits = false;
 
   @override
   void initState() {
     super.initState();
     _productBloc = sl<ProductBloc>();
     _loadCategories();
+    _loadUnits(); // Load units from API
     if (widget.product != null) {
       _initializeFormWithProduct(widget.product!);
     } else {
       // Auto-generate sku for new product
       _generatesku();
+    }
+  }
+
+  Future<void> _loadUnits() async {
+    try {
+      setState(() => _isLoadingUnits = true);
+      final apiClient = sl<ApiClient>();
+      final response = await apiClient.get('/units');
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as List? ?? [];
+        setState(() {
+          // Load all units (remove isActive filter for now)
+          _units =
+              data
+                  .map((unit) => unit['name'] as String)
+                  .toList();
+
+          // Set default unit if not set
+          if (_units.isNotEmpty && _selectedUnit.isEmpty) {
+            _selectedUnit = _units.first;
+          }
+
+          // If editing product, validate that the unit exists
+          if (widget.product != null &&
+              !_units.contains(widget.product!.unit)) {
+            // Add the product's unit if it doesn't exist in the list
+            if (widget.product!.unit.isNotEmpty) {
+              _units.add(widget.product!.unit);
+            }
+          }
+        });
+      }
+    } catch (e) {
+      // If API fails, use default units as fallback
+      setState(() {
+        _units = [
+          'PCS',
+          'KG',
+          'GRAM',
+          'LITER',
+          'ML',
+          'BOX',
+          'PACK',
+          'DUS',
+          'LUSIN',
+          'METER',
+        ];
+      });
+    } finally {
+      setState(() => _isLoadingUnits = false);
     }
   }
 
@@ -302,10 +343,10 @@ class _ProductFormPageState extends State<ProductFormPage> {
                             Expanded(flex: 2, child: _buildStockField()),
                             const SizedBox(width: 16),
                             Expanded(flex: 2, child: _buildMinStockField()),
-                            const SizedBox(width: 16),
-                            Expanded(flex: 1, child: _buildUnitDropdown()),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        _buildUnitDropdown(),
                         const SizedBox(height: 16),
                         Row(
                           children: [
@@ -617,26 +658,170 @@ class _ProductFormPageState extends State<ProductFormPage> {
   }
 
   Widget _buildUnitDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _selectedUnit,
-      decoration: InputDecoration(
-        labelText: 'Satuan *',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      items:
-          _units.map((unit) {
-            return DropdownMenuItem(
-              value: unit,
-              child: Text(unit.toUpperCase()),
-            );
-          }).toList(),
-      onChanged: (value) {
-        if (value != null) {
-          setState(() {
-            _selectedUnit = value;
-          });
-        }
-      },
+    return Row(
+      children: [
+        Expanded(
+          child: _units.isEmpty
+              ? TextFormField(
+                  decoration: InputDecoration(
+                    labelText: 'Satuan *',
+                    hintText: 'Loading...',
+                    prefixIcon: const Icon(Icons.straighten),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  enabled: false,
+                )
+              : Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return _units;
+                    }
+                    return _units.where((String unit) {
+                      return unit
+                          .toLowerCase()
+                          .contains(textEditingValue.text.toLowerCase());
+                    });
+                  },
+                  onSelected: (String selection) {
+                    setState(() {
+                      _selectedUnit = selection;
+                    });
+                  },
+                  fieldViewBuilder: (
+                    BuildContext context,
+                    TextEditingController textEditingController,
+                    FocusNode focusNode,
+                    VoidCallback onFieldSubmitted,
+                  ) {
+                    // Set initial value only once
+                    if (textEditingController.text.isEmpty && _selectedUnit.isNotEmpty) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        textEditingController.text = _selectedUnit;
+                      });
+                    }
+                    
+                    return TextFormField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        labelText: 'Satuan *',
+                        hintText: 'Ketik atau pilih satuan',
+                        prefixIcon: const Icon(Icons.straighten),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Satuan harus dipilih';
+                        }
+                        if (!_units.contains(value)) {
+                          return 'Satuan tidak valid';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        // Update selected unit when typing
+                        if (_units.contains(value)) {
+                          _selectedUnit = value;
+                        }
+                      },
+                    );
+                  },
+                  optionsViewBuilder: (
+                    BuildContext context,
+                    AutocompleteOnSelected<String> onSelected,
+                    Iterable<String> options,
+                  ) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 4.0,
+                        borderRadius: BorderRadius.circular(12),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxHeight: 200,
+                            maxWidth: 300,
+                          ),
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(8.0),
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final String option = options.elementAt(index);
+                              return InkWell(
+                                onTap: () {
+                                  onSelected(option);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12.0,
+                                    horizontal: 16.0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        option == _selectedUnit
+                                            ? AppColors.primary.withOpacity(0.1)
+                                            : null,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (option == _selectedUnit)
+                                        const Icon(
+                                          Icons.check,
+                                          color: AppColors.primary,
+                                          size: 20,
+                                        ),
+                                      if (option == _selectedUnit)
+                                        const SizedBox(width: 8),
+                                      Text(
+                                        option,
+                                        style: TextStyle(
+                                          fontWeight:
+                                              option == _selectedUnit
+                                                  ? FontWeight.bold
+                                                  : FontWeight.normal,
+                                          color:
+                                              option == _selectedUnit
+                                                  ? AppColors.primary
+                                                  : null,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          onPressed: _isLoadingUnits
+              ? null
+              : () async {
+                  // Open unit management
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const UnitListPage(),
+                    ),
+                  );
+                  // reload units if changed
+                  if (result == true) await _loadUnits();
+                },
+          icon: const Icon(Icons.edit),
+          tooltip: 'Kelola Satuan',
+          color: AppColors.primary,
+        ),
+      ],
     );
   }
 
@@ -734,53 +919,187 @@ class _ProductFormPageState extends State<ProductFormPage> {
     return Row(
       children: [
         Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _selectedCategoryId,
-            decoration: InputDecoration(
-              labelText: 'Kategori',
-              hintText: 'Pilih kategori (opsional)',
-              prefixIcon: const Icon(Icons.category),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            items:
-                _categories.map((c) {
-                  // Use displayName for showing hierarchy in dropdown
-                  final displayName = c['displayName'] ?? c['name'] ?? '-';
-                  return DropdownMenuItem(
-                    value: c['id'],
-                    child: Text(displayName),
-                  );
-                }).toList(),
-            onChanged: (value) {
-              final cat = _categories.firstWhere(
-                (c) => c['id'] == value,
-                orElse: () => {},
-              );
-              setState(() {
-                _selectedCategoryId = value;
-                _selectedCategoryName = cat['name'];
-              });
-            },
-          ),
+          child: _categories.isEmpty
+              ? TextFormField(
+                  decoration: InputDecoration(
+                    labelText: 'Kategori',
+                    hintText: 'Loading...',
+                    prefixIcon: const Icon(Icons.category),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  enabled: false,
+                )
+              : Autocomplete<Map<String, String>>(
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty) {
+                      return _categories;
+                    }
+                    return _categories.where((Map<String, String> category) {
+                      final name = category['name'] ?? '';
+                      return name
+                          .toLowerCase()
+                          .contains(textEditingValue.text.toLowerCase());
+                    });
+                  },
+                  displayStringForOption: (Map<String, String> option) =>
+                      option['name'] ?? '',
+                  onSelected: (Map<String, String> selection) {
+                    setState(() {
+                      _selectedCategoryId = selection['id'];
+                      _selectedCategoryName = selection['name'];
+                    });
+                  },
+                  fieldViewBuilder: (
+                    BuildContext context,
+                    TextEditingController textEditingController,
+                    FocusNode focusNode,
+                    VoidCallback onFieldSubmitted,
+                  ) {
+                    // Set initial value only once
+                    if (textEditingController.text.isEmpty && _selectedCategoryName != null && _selectedCategoryName!.isNotEmpty) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        textEditingController.text = _selectedCategoryName!;
+                      });
+                    }
+
+                    return TextFormField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        labelText: 'Kategori',
+                        hintText: 'Ketik atau pilih kategori (opsional)',
+                        prefixIcon: const Icon(Icons.category),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        suffixIcon: textEditingController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  textEditingController.clear();
+                                  setState(() {
+                                    _selectedCategoryId = null;
+                                    _selectedCategoryName = null;
+                                  });
+                                },
+                              )
+                            : null,
+                      ),
+                      onChanged: (value) {
+                        // Clear selection if text doesn't match
+                        if (value.isEmpty) {
+                          _selectedCategoryId = null;
+                          _selectedCategoryName = null;
+                        } else {
+                          // Check if typed value matches any category
+                          final match = _categories.firstWhere(
+                            (cat) => cat['name'] == value,
+                            orElse: () => {},
+                          );
+                          if (match.isNotEmpty) {
+                            _selectedCategoryId = match['id'];
+                            _selectedCategoryName = match['name'];
+                          }
+                        }
+                      },
+                    );
+                  },
+                  optionsViewBuilder: (
+                    BuildContext context,
+                    AutocompleteOnSelected<Map<String, String>> onSelected,
+                    Iterable<Map<String, String>> options,
+                  ) {
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Material(
+                        elevation: 4.0,
+                        borderRadius: BorderRadius.circular(12),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxHeight: 250,
+                            maxWidth: 350,
+                          ),
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(8.0),
+                            shrinkWrap: true,
+                            itemCount: options.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final Map<String, String> option =
+                                  options.elementAt(index);
+                              final displayName =
+                                  option['displayName'] ?? option['name'] ?? '-';
+                              final isSelected =
+                                  option['id'] == _selectedCategoryId;
+
+                              return InkWell(
+                                onTap: () {
+                                  onSelected(option);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12.0,
+                                    horizontal: 16.0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isSelected
+                                            ? AppColors.primary.withOpacity(0.1)
+                                            : null,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      if (isSelected)
+                                        const Icon(
+                                          Icons.check,
+                                          color: AppColors.primary,
+                                          size: 20,
+                                        ),
+                                      if (isSelected) const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          displayName,
+                                          style: TextStyle(
+                                            fontWeight:
+                                                isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                            color:
+                                                isSelected
+                                                    ? AppColors.primary
+                                                    : null,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed:
-              _isLoadingCategories
-                  ? null
-                  : () async {
-                    // Open category management
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CategoryListPage(),
-                      ),
-                    );
-                    // reload categories if changed
-                    if (result == true) await _loadCategories();
-                  },
+          onPressed: _isLoadingCategories
+              ? null
+              : () async {
+                  // Open category management
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CategoryListPage(),
+                    ),
+                  );
+                  // reload categories if changed
+                  if (result == true) await _loadCategories();
+                },
           icon: const Icon(Icons.edit),
           tooltip: 'Kelola Kategori',
           color: AppColors.primary,

@@ -14,6 +14,7 @@ import '../../../customer/presentation/pages/customer_list_page.dart';
 import '../../../branch/presentation/bloc/branch_bloc.dart';
 import '../../../branch/presentation/pages/branch_list_page.dart';
 import '../../../user/presentation/pages/user_list_page.dart';
+import '../../../unit/presentation/pages/unit_list_page.dart';
 import '../bloc/dashboard_bloc.dart';
 import 'management_home_page.dart';
 import 'app_settings_page.dart';
@@ -274,6 +275,17 @@ class SettingsPage extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (context) => const AppSettingsPage(),
                 ),
+              );
+            },
+          ),
+          _SettingsTile(
+            icon: Icons.straighten_outlined,
+            title: 'Pengaturan Satuan',
+            subtitle: 'Kelola satuan produk (PCS, KG, LITER, dll)',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UnitListPage()),
               );
             },
           ),
