@@ -23,6 +23,7 @@ class _CashierSettingsPageState extends State<CashierSettingsPage> {
   bool _autoPrint = true;
   bool _allowOffline = true;
   String _theme = 'light';
+  String _printFormat = 'receipt'; // 'receipt', 'invoice', 'delivery_note'
 
   @override
   void initState() {
@@ -51,6 +52,7 @@ class _CashierSettingsPageState extends State<CashierSettingsPage> {
     _autoPrint = _settings.autoPrintReceipt;
     _allowOffline = _settings.allowOfflineMode;
     _theme = _settings.themePreference;
+    _printFormat = _settings.defaultPrintFormat;
   }
 
   @override
@@ -81,6 +83,7 @@ class _CashierSettingsPageState extends State<CashierSettingsPage> {
         autoPrintReceipt: _autoPrint,
         allowOfflineMode: _allowOffline,
         themePreference: _theme,
+        defaultPrintFormat: _printFormat,
       );
 
       final success = await cashierSettingsService.saveSettings(updated);
@@ -231,6 +234,97 @@ class _CashierSettingsPageState extends State<CashierSettingsPage> {
               onChanged: (value) => setState(() => _autoPrint = value),
               secondary: const Icon(Icons.print_rounded),
             ),
+
+            // Format Cetak Default (hanya muncul jika auto print enabled)
+            if (_autoPrint)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.description,
+                          color: Colors.blue[700],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Format Cetak Default',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: _printFormat,
+                      decoration: const InputDecoration(
+                        labelText: 'Pilih Format',
+                        border: OutlineInputBorder(),
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'receipt',
+                          child: Row(
+                            children: [
+                              Icon(Icons.receipt, size: 18),
+                              SizedBox(width: 8),
+                              Text('Nota (Thermal 80mm)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'invoice',
+                          child: Row(
+                            children: [
+                              Icon(Icons.description, size: 18),
+                              SizedBox(width: 8),
+                              Text('Invoice (A4)'),
+                            ],
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'delivery_note',
+                          child: Row(
+                            children: [
+                              Icon(Icons.local_shipping, size: 18),
+                              SizedBox(width: 8),
+                              Text('Surat Jalan (A4)'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _printFormat = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Format ini akan digunakan untuk cetak otomatis setelah transaksi',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue[900],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             SwitchListTile(
               title: const Text('Mode Offline'),
               subtitle: const Text('Izinkan operasi tanpa koneksi server'),

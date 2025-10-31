@@ -37,20 +37,6 @@ async function setupDatabase() {
   const client = await pool.connect();
 
   try {
-    console.log(
-      "╔══════════════════════════════════════════════════════════════════╗"
-    );
-    console.log(
-      "║     POS ENTERPRISE - COMPLETE DATABASE SETUP                     ║"
-    );
-    console.log(
-      "║     Version 2.0 - WITH DECIMAL QUANTITY SUPPORT                  ║"
-    );
-    console.log(
-      "╚══════════════════════════════════════════════════════════════════╝"
-    );
-    console.log("");
-
     // Konfirmasi dari user
     console.log(
       "⚠️  WARNING: Ini akan MENGHAPUS semua data dan table yang ada!"
@@ -59,12 +45,7 @@ async function setupDatabase() {
     console.log("");
 
     // Read complete schema SQL file
-    const schemaPath = path.join(
-      __dirname,
-      "src",
-      "database",
-      "COMPLETE_SCHEMA.sql"
-    );
+    const schemaPath = path.join(__dirname, "COMPLETE_SCHEME.sql");
 
     console.log("📖 Reading complete schema file:", schemaPath);
 
@@ -75,14 +56,6 @@ async function setupDatabase() {
     const schemaSQL = fs.readFileSync(schemaPath, "utf8");
 
     console.log("✅ Schema file loaded successfully");
-    console.log("");
-
-    // Execute complete schema
-    console.log("🔄 Executing complete database setup...");
-    console.log("   - Dropping old tables and types");
-    console.log("   - Creating new tables with DECIMAL quantity");
-    console.log("   - Setting up indexes and triggers");
-    console.log("   - Inserting default data");
     console.log("");
 
     const startTime = Date.now();
@@ -127,47 +100,6 @@ async function setupDatabase() {
     console.log("└─────────────────────────────┴──────────┘");
     console.log("");
 
-    // Verify DECIMAL columns
-    console.log("🔍 Verifying DECIMAL quantity columns...");
-    console.log("");
-
-    const decimalQuery = `
-      SELECT 
-        table_name,
-        column_name,
-        data_type,
-        numeric_precision,
-        numeric_scale
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND column_name LIKE '%quantity%'
-        AND data_type = 'numeric'
-      ORDER BY table_name, column_name;
-    `;
-
-    const decimalResult = await client.query(decimalQuery);
-
-    console.log("📐 DECIMAL QUANTITY COLUMNS:");
-    console.log(
-      "┌─────────────────────────┬──────────────────────────┬───────────┬────────┐"
-    );
-    console.log(
-      "│ Table                   │ Column                   │ Precision │ Scale  │"
-    );
-    console.log(
-      "├─────────────────────────┼──────────────────────────┼───────────┼────────┤"
-    );
-
-    decimalResult.rows.forEach((row) => {
-      console.log(
-        `│ ${row.table_name.padEnd(23)} │ ${row.column_name.padEnd(
-          24
-        )} │ ${String(row.numeric_precision).padEnd(9)} │ ${String(
-          row.numeric_scale
-        ).padEnd(6)} │`
-      );
-    });
-
     console.log(
       "└─────────────────────────┴──────────────────────────┴───────────┴────────┘"
     );
@@ -194,15 +126,6 @@ async function setupDatabase() {
     console.log(
       "╚══════════════════════════════════════════════════════════════════╝"
     );
-    console.log("");
-    console.log("📝 NEXT STEPS:");
-    console.log("   1. Backend siap digunakan (npm run dev)");
-    console.log("   2. Update Flutter models untuk quantity: int → double");
-    console.log("   3. Update form validators: int.tryParse → double.tryParse");
-    console.log("   4. Test dengan data quantity pecahan (1.5, 2.75, dll)");
-    console.log("");
-    console.log("📚 Documentation: Lihat QUANTITY_MIGRATION_GUIDE.md");
-    console.log("");
   } catch (error) {
     console.error("");
     console.error("❌ DATABASE SETUP FAILED!");

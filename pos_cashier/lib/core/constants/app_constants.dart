@@ -30,7 +30,10 @@ class AppConstants {
   static const int receiveTimeout = 10000;
 
   // Sync Configuration
-  static const Duration syncInterval = Duration(minutes: 5);
+  // ⚠️ syncInterval TIDAK DIGUNAKAN LAGI (Background periodic sync disabled)
+  // Karena sudah menggunakan WebSocket real-time update
+  // Sync hanya dilakukan saat: 1) Initial load, 2) Manual sync, 3) After long offline
+  static const Duration syncInterval = Duration(minutes: 5); // DEPRECATED
   static const int maxRetryAttempts = 3;
   static const int syncBatchSize = 50;
 

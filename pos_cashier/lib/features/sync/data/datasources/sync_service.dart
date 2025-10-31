@@ -194,18 +194,36 @@ class SyncService {
   }
 
   /// Start background sync
+  /// ⚠️ DISABLED: Karena sudah menggunakan WebSocket real-time
+  /// Background sync TIDAK diperlukan lagi, hanya manual sync yang dibutuhkan
   void startBackgroundSync() {
-    _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(AppConstants.syncInterval, (_) {
-      if (_isOnline) {
-        syncAll();
+    print('ℹ️ Background periodic sync DISABLED (using WebSocket real-time)');
+    print('🔌 Real-time updates via WebSocket are active');
+    print('💡 Use manual sync button if you need to force sync');
+
+    // ❌ TIDAK LAGI menggunakan Timer.periodic
+    // Karena WebSocket sudah handle real-time update
+
+    // Background sync hanya diperlukan jika:
+    // 1. Offline mode (tidak ada WebSocket)
+    // 2. User manual trigger sync
+
+    // Listen to WebSocket status untuk fallback sync jika offline lama
+    _listenToWebSocketStatus();
+  }
+
+  /// Listen to WebSocket status for offline fallback
+  void _listenToWebSocketStatus() {
+    _socketStatusSubscription?.cancel();
+    _socketStatusSubscription = _socketService.serverStatus.listen((isOnline) {
+      _isOnline = isOnline;
+
+      if (isOnline) {
+        print('� WebSocket connected - Real-time updates active');
+      } else {
+        print('🔴 WebSocket disconnected - Waiting for reconnection...');
       }
     });
-
-    print(
-      '⏰ Background sync started (every ${AppConstants.syncInterval.inMinutes} minutes)',
-    );
-    print('🔌 Real-time mode switching via WebSocket enabled');
   }
 
   /// Force set online status (dipanggil saat online login berhasil)
@@ -235,10 +253,6 @@ class SyncService {
 
       // Download products from server
       await _downloadProducts();
-
-      // Download categories
-      await _downloadCategories();
-
       // Upload pending sales
       await _uploadPendingSales();
 
@@ -314,22 +328,6 @@ class SyncService {
           syncedCount: 0,
         ),
       );
-    }
-  }
-
-  /// Download categories from server
-  Future<void> _downloadCategories() async {
-    try {
-      final categories = await _apiService.getCategories();
-      final categoriesBox = _hiveService.categoriesBox;
-
-      for (final categoryData in categories) {
-        await categoriesBox.put(categoryData['id'].toString(), categoryData);
-      }
-
-      print('✅ Synced ${categories.length} categories from server');
-    } catch (e) {
-      print('❌ Error downloading categories: $e');
     }
   }
 

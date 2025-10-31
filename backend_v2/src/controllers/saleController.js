@@ -127,6 +127,8 @@ export const getAllSales = async (req, res) => {
         discountPercentage: parseFloat(sale.discount_percentage || 0),
         tax: parseFloat(sale.tax_amount || 0),
         total: parseFloat(sale.total_amount),
+        rounding: parseFloat(sale.rounding || 0),
+        grandTotal: parseFloat(sale.grand_total || sale.total_amount),
         paidAmount: parseFloat(sale.paid_amount || 0),
         changeAmount: parseFloat(sale.change_amount || 0),
 
@@ -314,6 +316,8 @@ export const createSale = async (req, res) => {
     discountPercentage,
     taxAmount,
     totalAmount,
+    rounding,
+    grandTotal,
     paidAmount,
     changeAmount,
     paymentMethod,
@@ -335,10 +339,10 @@ export const createSale = async (req, res) => {
       `INSERT INTO sales (
         sale_number, branch_id, customer_id, cashier_id,
         subtotal, discount_amount, discount_percentage, tax_amount,
-        total_amount, paid_amount, change_amount,
+        total_amount, rounding, grand_total, paid_amount, change_amount,
         payment_method, payment_reference, notes,
         cashier_location, device_info
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
       [
         saleNumber,
@@ -350,6 +354,8 @@ export const createSale = async (req, res) => {
         discountPercentage || 0,
         taxAmount || 0,
         totalAmount,
+        rounding || 0,
+        grandTotal || totalAmount,
         paidAmount,
         changeAmount || 0,
         paymentMethod,

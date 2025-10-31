@@ -85,18 +85,15 @@ class SocketService {
     }
   }
 
-  /// Setup event listeners
   void _setupEventListeners() {
     if (_socket == null) return;
 
-    // Connection events
     _socket!.onConnect((_) {
       print('✅ Socket connected - Server ONLINE');
       _isConnected = true;
       _connectionController.add(true);
       _serverStatusController.add(true);
 
-      // Auto-switch to online mode
       _switchToOnlineMode();
     });
 
@@ -176,25 +173,28 @@ class SocketService {
       print('   Data: $data');
       await _handleProductDeleted(data);
     });
+  }
 
-    // Category Events
-    _socket!.on('category:created', (data) async {
-      print('🏷️ Real-time event: Category CREATED');
-      print('   Data: $data');
-      await _handleCategoryCreated(data);
-    });
+  /// Helper: Convert dynamic value to double safely
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
+  }
 
-    _socket!.on('category:updated', (data) async {
-      print('🏷️ Real-time event: Category UPDATED');
-      print('   Data: $data');
-      await _handleCategoryUpdated(data);
-    });
-
-    _socket!.on('category:deleted', (data) async {
-      print('🏷️ Real-time event: Category DELETED');
-      print('   Data: $data');
-      await _handleCategoryDeleted(data);
-    });
+  /// Helper: Convert dynamic value to int safely
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
   }
 
   /// Handle product created event
@@ -217,14 +217,13 @@ class SocketService {
             product['categoryId']?.toString() ??
             product['category_id']?.toString(),
         'unit': product['unit'] ?? 'PCS',
-        'cost_price':
-            (product['costPrice'] ?? product['cost_price'] ?? 0).toDouble(),
-        'selling_price':
-            (product['sellingPrice'] ?? product['selling_price'] ?? 0)
-                .toDouble(),
-        'stock': 0, // Initial stock
-        'min_stock': product['minStock'] ?? product['min_stock'] ?? 0,
-        'max_stock': product['maxStock'] ?? product['max_stock'] ?? 0,
+        'cost_price': _toDouble(product['costPrice'] ?? product['cost_price']),
+        'selling_price': _toDouble(
+          product['sellingPrice'] ?? product['selling_price'],
+        ),
+        'stock': _toDouble(product['stock'] ?? 0),
+        'min_stock': _toInt(product['minStock'] ?? product['min_stock']),
+        'max_stock': _toInt(product['maxStock'] ?? product['max_stock']),
         'image_url': product['imageUrl'] ?? product['image_url'],
         'is_active': product['isActive'] ?? product['is_active'] ?? true,
         'created_at':
@@ -260,8 +259,8 @@ class SocketService {
       final existingData = productsBox.get(productId);
       final existingStock =
           existingData != null
-              ? (existingData is Map ? existingData['stock'] ?? 0 : 0)
-              : 0;
+              ? _toDouble(existingData is Map ? existingData['stock'] : 0)
+              : 0.0;
 
       // Transform and merge with existing data
       final productData = {
@@ -274,14 +273,13 @@ class SocketService {
             product['categoryId']?.toString() ??
             product['category_id']?.toString(),
         'unit': product['unit'] ?? 'PCS',
-        'cost_price':
-            (product['costPrice'] ?? product['cost_price'] ?? 0).toDouble(),
-        'selling_price':
-            (product['sellingPrice'] ?? product['selling_price'] ?? 0)
-                .toDouble(),
+        'cost_price': _toDouble(product['costPrice'] ?? product['cost_price']),
+        'selling_price': _toDouble(
+          product['sellingPrice'] ?? product['selling_price'],
+        ),
         'stock': existingStock, // Preserve existing stock
-        'min_stock': product['minStock'] ?? product['min_stock'] ?? 0,
-        'max_stock': product['maxStock'] ?? product['max_stock'] ?? 0,
+        'min_stock': _toInt(product['minStock'] ?? product['min_stock']),
+        'max_stock': _toInt(product['maxStock'] ?? product['max_stock']),
         'image_url': product['imageUrl'] ?? product['image_url'],
         'is_active': product['isActive'] ?? product['is_active'] ?? true,
         'created_at':
@@ -321,83 +319,6 @@ class SocketService {
       _dataUpdateController.add('product:deleted');
     } catch (e) {
       print('❌ Error handling product deleted: $e');
-    }
-  }
-
-  /// Handle category created event
-  Future<void> _handleCategoryCreated(dynamic data) async {
-    try {
-      final category = data['category'];
-      if (category == null) return;
-
-      final categoriesBox = _hiveService.categoriesBox;
-      final categoryId = category['id'].toString();
-
-      final categoryData = {
-        'id': categoryId,
-        'name': category['name'],
-        'description': category['description'],
-        'parent_id': category['parent_id']?.toString(),
-        'icon': category['icon'],
-        'is_active': category['is_active'] ?? true,
-        'created_at':
-            category['created_at'] ?? DateTime.now().toIso8601String(),
-        'updated_at':
-            category['updated_at'] ?? DateTime.now().toIso8601String(),
-      };
-
-      await categoriesBox.put(categoryId, categoryData);
-      print(
-        '✅ Category added to local DB: ${category['name']} (ID: $categoryId)',
-      );
-    } catch (e) {
-      print('❌ Error handling category created: $e');
-    }
-  }
-
-  /// Handle category updated event
-  Future<void> _handleCategoryUpdated(dynamic data) async {
-    try {
-      final category = data['category'];
-      if (category == null) return;
-
-      final categoriesBox = _hiveService.categoriesBox;
-      final categoryId = category['id'].toString();
-
-      final categoryData = {
-        'id': categoryId,
-        'name': category['name'],
-        'description': category['description'],
-        'parent_id': category['parent_id']?.toString(),
-        'icon': category['icon'],
-        'is_active': category['is_active'] ?? true,
-        'created_at':
-            category['created_at'] ?? DateTime.now().toIso8601String(),
-        'updated_at':
-            category['updated_at'] ?? DateTime.now().toIso8601String(),
-      };
-
-      await categoriesBox.put(categoryId, categoryData);
-      print(
-        '✅ Category updated in local DB: ${category['name']} (ID: $categoryId)',
-      );
-    } catch (e) {
-      print('❌ Error handling category updated: $e');
-    }
-  }
-
-  /// Handle category deleted event
-  Future<void> _handleCategoryDeleted(dynamic data) async {
-    try {
-      final categoryId = data['categoryId']?.toString();
-      if (categoryId == null) return;
-
-      final categoriesBox = _hiveService.categoriesBox;
-      await categoriesBox.delete(categoryId);
-
-      print('✅ Category deleted from local DB: $categoryId');
-    } catch (e) {
-      print('❌ Error handling category deleted: $e');
     }
   }
 

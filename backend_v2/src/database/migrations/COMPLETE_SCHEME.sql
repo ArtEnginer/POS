@@ -1,11 +1,13 @@
 -- ============================================
 -- POS ENTERPRISE DATABASE SCHEMA - COMPLETE
 -- PostgreSQL 16+
--- Multi-Branch Support
--- DENGAN QUANTITY SUPPORT DECIMAL (Mendukung pecahan: 1.5, 2.75, dll)
+-- Multi-Branch Support dengan QUANTITY DECIMAL Support
 -- ============================================
--- Version: 2.0
--- Last Updated: 28 Oktober 2025
+-- Version: 3.0 - COMPLETE ALL MIGRATIONS
+-- Last Updated: 31 Oktober 2025
+-- ============================================
+-- File ini berisi SEMUA schema dan migrations dalam satu file
+-- untuk memudahkan instalasi di komputer lain
 -- ============================================
 
 -- ============================================
@@ -36,6 +38,8 @@ DROP TABLE IF EXISTS receiving_items CASCADE;
 DROP TABLE IF EXISTS receivings CASCADE;
 DROP TABLE IF EXISTS purchase_items CASCADE;
 DROP TABLE IF EXISTS purchases CASCADE;
+DROP TABLE IF EXISTS return_items CASCADE;
+DROP TABLE IF EXISTS sales_returns CASCADE;
 DROP TABLE IF EXISTS sale_items CASCADE;
 DROP TABLE IF EXISTS sales CASCADE;
 DROP TABLE IF EXISTS product_stocks CASCADE;
@@ -64,6 +68,12 @@ DROP TYPE IF EXISTS sync_entity_type CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP FUNCTION IF EXISTS update_stock_on_sale() CASCADE;
 DROP FUNCTION IF EXISTS calculate_sale_totals() CASCADE;
+DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
+
+-- Drop views
+DROP VIEW IF EXISTS v_sales_profit_analysis CASCADE;
+DROP VIEW IF EXISTS v_sale_items_profit CASCADE;
+DROP VIEW IF EXISTS v_sales_returns_detail CASCADE;
 
 -- ============================================
 -- SECTION 1: BRANCH MANAGEMENT
@@ -140,7 +150,7 @@ CREATE TABLE cashier_settings (
     branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
     
     -- Device Information
-    device_name VARCHAR(100) NOT NULL DEFAULT 'Kasir-1',
+    device_name VARCHAR(100) NOT NULL DEFAULT 'Kasir-default',
     device_type VARCHAR(50) DEFAULT 'windows',
     device_identifier VARCHAR(255),
     
@@ -322,6 +332,8 @@ CREATE TABLE sales (
     discount_percentage DECIMAL(5, 2) DEFAULT 0,
     tax_amount DECIMAL(15, 2) DEFAULT 0,
     total_amount DECIMAL(15, 2) NOT NULL,
+    rounding DECIMAL(15, 2) DEFAULT 0,
+    grand_total DECIMAL(15, 2) NOT NULL,
     paid_amount DECIMAL(15, 2) DEFAULT 0,
     change_amount DECIMAL(15, 2) DEFAULT 0,
     
@@ -355,6 +367,8 @@ CREATE INDEX idx_sales_cashier ON sales(cashier_id);
 CREATE INDEX idx_sales_date ON sales(sale_date);
 CREATE INDEX idx_sales_status ON sales(status);
 CREATE INDEX idx_sales_sync ON sales(sync_status);
+CREATE INDEX idx_sales_profit_margin ON sales(profit_margin);
+CREATE INDEX idx_sales_gross_profit ON sales(gross_profit);
 
 CREATE TABLE sale_items (
     id BIGSERIAL PRIMARY KEY,
@@ -368,11 +382,12 @@ CREATE TABLE sale_items (
     discount_amount DECIMAL(15, 2) DEFAULT 0,
     discount_percentage DECIMAL(5, 2) DEFAULT 0,
     tax_amount DECIMAL(15, 2) DEFAULT 0,
+    tax_percentage DECIMAL(5, 2) DEFAULT 0,
     subtotal DECIMAL(15, 2) NOT NULL,
     total DECIMAL(15, 2) NOT NULL,
     
     -- Cost & Profit Tracking (Snapshot at transaction time)
-    cost_price DECIMAL(15, 2),
+    cost_price DECIMAL(15, 2) DEFAULT 0,
     total_cost DECIMAL(15, 2) GENERATED ALWAYS AS (cost_price * quantity) STORED,
     item_profit DECIMAL(15, 2) GENERATED ALWAYS AS (total - (cost_price * quantity)) STORED,
     
@@ -383,9 +398,69 @@ CREATE TABLE sale_items (
 CREATE INDEX idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX idx_sale_items_branch ON sale_items(branch_id);
 CREATE INDEX idx_sale_items_product ON sale_items(product_id);
+CREATE INDEX idx_sale_items_cost_price ON sale_items(cost_price);
 
 -- ============================================
--- SECTION 7: PURCHASE TRANSACTIONS
+-- SECTION 7: SALES RETURNS
+-- ============================================
+
+CREATE TABLE sales_returns (
+    id BIGSERIAL PRIMARY KEY,
+    return_number VARCHAR(50) UNIQUE NOT NULL,
+    original_sale_id BIGINT NOT NULL REFERENCES sales(id) ON DELETE RESTRICT,
+    original_invoice_number VARCHAR(50) NOT NULL,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+    return_date TIMESTAMP NOT NULL DEFAULT NOW(),
+    return_reason TEXT NOT NULL,
+    total_refund DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    refund_method VARCHAR(20) DEFAULT 'cash',
+    customer_id INTEGER,
+    customer_name VARCHAR(255),
+    cashier_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    cashier_name VARCHAR(255),
+    processed_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    status VARCHAR(20) DEFAULT 'pending',
+    synced_at TIMESTAMP,
+    sync_status VARCHAR(20) DEFAULT 'pending',
+    notes TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted_at TIMESTAMP,
+    
+    -- Check constraints
+    CONSTRAINT chk_refund_method CHECK (refund_method IN ('cash', 'transfer', 'credit')),
+    CONSTRAINT chk_return_status CHECK (status IN ('pending', 'processed', 'completed', 'cancelled'))
+);
+
+CREATE INDEX idx_sales_returns_return_number ON sales_returns(return_number);
+CREATE INDEX idx_sales_returns_original_sale ON sales_returns(original_sale_id);
+CREATE INDEX idx_sales_returns_branch ON sales_returns(branch_id);
+CREATE INDEX idx_sales_returns_cashier ON sales_returns(cashier_id);
+CREATE INDEX idx_sales_returns_return_date ON sales_returns(return_date);
+CREATE INDEX idx_sales_returns_status ON sales_returns(status);
+
+CREATE TABLE return_items (
+    id BIGSERIAL PRIMARY KEY,
+    return_id BIGINT NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    product_name VARCHAR(255) NOT NULL,
+    quantity DECIMAL(15, 3) NOT NULL,
+    unit_price DECIMAL(15, 2) NOT NULL,
+    subtotal DECIMAL(15, 2) NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    
+    -- Check constraints
+    CONSTRAINT chk_return_quantity_positive CHECK (quantity > 0),
+    CONSTRAINT chk_return_unit_price_non_negative CHECK (unit_price >= 0)
+);
+
+CREATE INDEX idx_return_items_return_id ON return_items(return_id);
+CREATE INDEX idx_return_items_product_id ON return_items(product_id);
+
+-- ============================================
+-- SECTION 8: PURCHASE TRANSACTIONS
 -- ============================================
 
 CREATE TYPE purchase_status AS ENUM ('draft', 'ordered', 'approved', 'partial', 'received', 'cancelled');
@@ -448,7 +523,7 @@ CREATE INDEX idx_purchase_items_purchase ON purchase_items(purchase_id);
 CREATE INDEX idx_purchase_items_product ON purchase_items(product_id);
 
 -- ============================================
--- SECTION 8: RECEIVING (PENERIMAAN BARANG)
+-- SECTION 9: RECEIVING (PENERIMAAN BARANG)
 -- ============================================
 
 CREATE TYPE receiving_status AS ENUM ('completed', 'partial', 'cancelled');
@@ -528,7 +603,7 @@ CREATE INDEX idx_receiving_items_receiving ON receiving_items(receiving_id);
 CREATE INDEX idx_receiving_items_product ON receiving_items(product_id);
 
 -- ============================================
--- SECTION 9: PURCHASE RETURNS
+-- SECTION 10: PURCHASE RETURNS
 -- ============================================
 
 CREATE TABLE purchase_returns (
@@ -590,7 +665,7 @@ CREATE INDEX idx_purchase_return_items_return ON purchase_return_items(return_id
 CREATE INDEX idx_purchase_return_items_product ON purchase_return_items(product_id);
 
 -- ============================================
--- SECTION 10: INVENTORY ADJUSTMENTS
+-- SECTION 11: INVENTORY ADJUSTMENTS
 -- ============================================
 
 CREATE TYPE adjustment_type AS ENUM ('increase', 'decrease', 'transfer', 'damage', 'lost', 'found');
@@ -617,7 +692,7 @@ CREATE INDEX idx_stock_adjustments_product ON stock_adjustments(product_id);
 CREATE INDEX idx_stock_adjustments_date ON stock_adjustments(adjustment_date);
 
 -- ============================================
--- SECTION 11: SYNC LOG
+-- SECTION 12: SYNC LOG
 -- ============================================
 
 CREATE TYPE sync_operation AS ENUM ('create', 'update', 'delete');
@@ -643,7 +718,7 @@ CREATE INDEX idx_sync_logs_status ON sync_logs(sync_status);
 CREATE INDEX idx_sync_logs_date ON sync_logs(created_at);
 
 -- ============================================
--- SECTION 12: AUDIT LOG
+-- SECTION 13: AUDIT LOG
 -- ============================================
 
 CREATE TABLE audit_logs (
@@ -666,7 +741,7 @@ CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_logs_date ON audit_logs(created_at);
 
 -- ============================================
--- SECTION 13: FUNCTIONS & TRIGGERS
+-- SECTION 14: FUNCTIONS & TRIGGERS
 -- ============================================
 
 -- Update timestamp function
@@ -682,12 +757,28 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER update_branches_timestamp BEFORE UPDATE ON branches FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_users_timestamp BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_cashier_settings_timestamp BEFORE UPDATE ON cashier_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_categories_timestamp BEFORE UPDATE ON categories FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_products_timestamp BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_customers_timestamp BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_suppliers_timestamp BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_sales_timestamp BEFORE UPDATE ON sales FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_purchases_timestamp BEFORE UPDATE ON purchases FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER update_receivings_timestamp BEFORE UPDATE ON receivings FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+CREATE TRIGGER update_purchase_returns_timestamp BEFORE UPDATE ON purchase_returns FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Update timestamp function for sales_returns (alternate name for compatibility)
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_sales_returns_updated_at 
+BEFORE UPDATE ON sales_returns 
+FOR EACH ROW 
+EXECUTE FUNCTION update_updated_at_column();
 
 -- Auto-calculate sale profit totals
 CREATE OR REPLACE FUNCTION calculate_sale_totals()
@@ -757,7 +848,7 @@ FOR EACH ROW
 EXECUTE FUNCTION update_stock_on_sale();
 
 -- ============================================
--- SECTION 14: VIEWS FOR REPORTING
+-- SECTION 15: VIEWS FOR REPORTING
 -- ============================================
 
 -- Sales Profit Analysis View
@@ -814,8 +905,58 @@ FROM sale_items si
 JOIN sales s ON si.sale_id = s.id
 JOIN branches b ON si.branch_id = b.id;
 
+-- Sales Returns Detail View
+CREATE OR REPLACE VIEW v_sales_returns_detail AS
+SELECT 
+    sr.id,
+    sr.return_number,
+    sr.original_sale_id,
+    sr.original_invoice_number,
+    sr.branch_id,
+    b.name as branch_name,
+    sr.return_date,
+    sr.return_reason,
+    sr.total_refund,
+    sr.refund_method,
+    sr.customer_id,
+    sr.customer_name,
+    sr.cashier_id,
+    sr.cashier_name,
+    sr.processed_by_user_id,
+    u.username as processed_by_username,
+    sr.status,
+    sr.notes,
+    sr.created_at,
+    sr.updated_at,
+    -- Aggregate return items
+    COUNT(ri.id) as total_items,
+    SUM(ri.quantity) as total_quantity,
+    json_agg(
+        json_build_object(
+            'id', ri.id,
+            'product_id', ri.product_id,
+            'product_name', ri.product_name,
+            'quantity', ri.quantity,
+            'unit_price', ri.unit_price,
+            'subtotal', ri.subtotal,
+            'reason', ri.reason
+        ) ORDER BY ri.created_at
+    ) FILTER (WHERE ri.id IS NOT NULL) as items
+FROM sales_returns sr
+LEFT JOIN branches b ON sr.branch_id = b.id
+LEFT JOIN users u ON sr.processed_by_user_id = u.id
+LEFT JOIN return_items ri ON sr.id = ri.return_id
+WHERE sr.deleted_at IS NULL
+GROUP BY 
+    sr.id, sr.return_number, sr.original_sale_id, 
+    sr.original_invoice_number, sr.branch_id, b.name,
+    sr.return_date, sr.return_reason, sr.total_refund,
+    sr.refund_method, sr.customer_id, sr.customer_name,
+    sr.cashier_id, sr.cashier_name, sr.processed_by_user_id,
+    u.username, sr.status, sr.notes, sr.created_at, sr.updated_at;
+
 -- ============================================
--- SECTION 15: INITIAL DATA
+-- SECTION 16: INITIAL DATA
 -- ============================================
 
 -- Default super admin user (password: admin123)
@@ -852,10 +993,33 @@ ON CONFLICT (user_id, branch_id) DO NOTHING;
 -- ============================================
 
 SELECT '✅ Database schema created successfully!' as status;
-SELECT '✅ QUANTITY Support: DECIMAL(15, 3) - Mendukung pecahan (1.5, 2.75, dll)' as feature;
+SELECT '✅ QUANTITY Support: DECIMAL(15, 3) - Mendukung pecahan (1.5, 2.75, dll)' as feature1;
 SELECT '✅ COST & PROFIT Tracking: Auto-calculate profit per item & per sale' as feature2;
 SELECT '✅ CASHIER Settings: Device name, location, counter tracking' as feature3;
+SELECT '✅ SALES RETURNS: Complete return management with decimal quantity' as feature4;
+SELECT '✅ RECEIVING: Complete purchase receiving management' as feature5;
+SELECT '✅ PURCHASE RETURNS: Return management for purchases' as feature6;
 SELECT 'Username: admin | Password: admin123' as credentials;
 SELECT 'Total Tables: ' || COUNT(*) || ' tables created' as summary
 FROM information_schema.tables 
 WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+
+-- ============================================
+-- INFORMASI PENTING
+-- ============================================
+-- 1. File ini menggabungkan SEMUA migrasi database
+-- 2. Cocok untuk fresh installation di komputer baru
+-- 3. Password default admin: admin123 (HARUS DIGANTI!)
+-- 4. Sudah include semua fitur:
+--    - Multi-branch support
+--    - Decimal quantity support
+--    - Cost & profit tracking
+--    - Cashier device settings
+--    - Sales returns
+--    - Purchase receiving
+--    - Purchase returns
+--    - Stock adjustments
+--    - Sync logs
+--    - Audit logs
+-- 5. Untuk update existing database, gunakan file migrasi individual
+-- ============================================

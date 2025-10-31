@@ -6,6 +6,7 @@ import '../../data/models/cart_item_model.dart';
 import '../../data/models/pending_sale_model.dart';
 import '../bloc/cashier_bloc.dart';
 import '../widgets/pending_sales_dialog.dart';
+import '../widgets/print_options_dialog.dart';
 import 'sales_history_page.dart'; // Sales History Page
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/database/hive_service.dart';
@@ -23,8 +24,11 @@ class CashierPage extends StatefulWidget {
 class _CashierPageState extends State<CashierPage> {
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
+  final _customerCodeController = TextEditingController();
   List<ProductModel> _allProducts = [];
   List<ProductModel> _filteredProducts = [];
+  Map<String, dynamic>? _selectedCustomer;
+  bool _isSearchingCustomer = false;
   StreamSubscription? _socketStatusListener; // Listener untuk WebSocket status
   StreamSubscription? _dataUpdateListener; // Listener untuk product updates
 
@@ -42,10 +46,30 @@ class _CashierPageState extends State<CashierPage> {
       // Widget RealtimeSyncIndicator will auto-update via StreamBuilder
     });
 
-    // Listen to product updates via WebSocket - AUTO REFRESH!
+    // Listen to product updates via WebSocket - OPTIMIZED!
+    // Hanya reload jika event dari SYNC, bukan dari WebSocket real-time update
     _dataUpdateListener = socketService.dataUpdates.listen((eventType) {
-      print('🔔 Data update detected: $eventType - Reloading products...');
-      _loadProducts(); // Auto-refresh product list
+      print('🔔 Data update detected: $eventType');
+
+      // WebSocket real-time events (product:created, product:updated, product:deleted)
+      // sudah langsung update Hive database oleh SocketService
+      // Jadi kita HANYA perlu refresh UI jika produk yang berubah sedang ditampilkan
+      if (eventType.startsWith('product:') && !eventType.contains('synced')) {
+        // Hanya refresh filtered products dari database lokal
+        // TIDAK download dari server karena WebSocket sudah update Hive
+        print('   → Refreshing UI from local DB (no download)');
+        _refreshProductsFromLocalDB();
+      }
+      // Untuk sync events (product:synced dari manual sync), reload full
+      else if (eventType.contains('synced') || eventType.contains('sync')) {
+        print('   → Full reload after manual sync');
+        _loadProducts();
+      }
+      // Category events juga hanya refresh local
+      else if (eventType.startsWith('category:')) {
+        print('   → Category updated, refreshing UI');
+        _refreshProductsFromLocalDB();
+      }
     });
 
     // Hapus SnackBar listener - sekarang menggunakan header notification
@@ -56,6 +80,7 @@ class _CashierPageState extends State<CashierPage> {
   void dispose() {
     _searchController.dispose();
     _barcodeController.dispose();
+    _customerCodeController.dispose();
     _socketStatusListener?.cancel(); // Cancel WebSocket listener
     _dataUpdateListener?.cancel(); // Cancel data update listener
     super.dispose();
@@ -84,6 +109,27 @@ class _CashierPageState extends State<CashierPage> {
       }
     } catch (e) {
       print('Error loading products: $e');
+    }
+  }
+
+  /// Refresh products from LOCAL database only (NO server download)
+  /// Digunakan saat WebSocket event untuk update UI tanpa download ulang
+  void _refreshProductsFromLocalDB() {
+    try {
+      print('🔄 Refreshing products from LOCAL database (no download)...');
+
+      // Get products from local database (sudah di-update oleh SocketService)
+      final products = productRepository.getLocalProducts();
+
+      setState(() {
+        _allProducts = products;
+        // Re-apply search filter jika ada
+        _filterProducts();
+      });
+
+      print('✅ UI refreshed with ${products.length} products from local DB');
+    } catch (e) {
+      print('❌ Error refreshing products from local DB: $e');
     }
   }
 
@@ -249,10 +295,10 @@ class _CashierPageState extends State<CashierPage> {
           Expanded(
             child: Row(
               children: [
-                // Left: Cart & Transaction Details (Main Section)
-                Expanded(flex: 3, child: _buildCartSection()),
+                // Left: Cart & Transaction Details (Main Section) - LEBIH LEBAR
+                Expanded(flex: 6, child: _buildCartSection()),
 
-                // Right: Detail Nominal Only
+                // Right: Detail Nominal Only - LEBIH KECIL
                 Expanded(flex: 2, child: _buildDetailNominalSection()),
               ],
             ),
@@ -272,11 +318,11 @@ class _CashierPageState extends State<CashierPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: Colors.blue[700],
-            child: const Row(
+            child: Row(
               children: [
-                Icon(Icons.receipt_long, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text(
+                const Icon(Icons.receipt_long, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                const Text(
                   'Detail Nominal',
                   style: TextStyle(
                     color: Colors.white,
@@ -284,9 +330,74 @@ class _CashierPageState extends State<CashierPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                // Icon untuk membuka pencarian customer
+                IconButton(
+                  icon: Icon(
+                    _selectedCustomer != null
+                        ? Icons.person
+                        : Icons.person_outline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: () => _showCustomerSearchDialog(),
+                  tooltip: 'Pilih Customer',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
               ],
             ),
           ),
+
+          // Customer info banner (jika sudah dipilih)
+          if (_selectedCustomer != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                border: Border(
+                  bottom: BorderSide(color: Colors.green[200]!, width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.green[700], size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedCustomer!['name'] ?? '',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          _selectedCustomer!['code'] ?? '',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 14),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      setState(() {
+                        _selectedCustomer = null;
+                        _customerCodeController.clear();
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
 
           // Detail Nominal Content
           Expanded(
@@ -324,97 +435,6 @@ class _CashierPageState extends State<CashierPage> {
                                 if (state.itemDiscountAmount > 0)
                                   const SizedBox(height: 12),
 
-                                // Input Diskon Global
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.orange[200]!,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange[100],
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.percent,
-                                          color: Colors.orange[700],
-                                          size: 20,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      const Expanded(
-                                        child: Text(
-                                          'Diskon Total',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 70,
-                                        child: TextField(
-                                          key: ValueKey(
-                                            'global_discount_${state.globalDiscount}',
-                                          ),
-                                          decoration: const InputDecoration(
-                                            hintText: '0',
-                                            suffix: Text('%'),
-                                            contentPadding:
-                                                EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 8,
-                                                ),
-                                            isDense: true,
-                                            border: OutlineInputBorder(),
-                                            filled: true,
-                                            fillColor: Colors.white,
-                                          ),
-                                          style: const TextStyle(fontSize: 12),
-                                          keyboardType: TextInputType.number,
-                                          textAlign: TextAlign.center,
-                                          controller: TextEditingController(
-                                            text:
-                                                state.globalDiscount > 0
-                                                    ? state.globalDiscount
-                                                        .toStringAsFixed(0)
-                                                    : '',
-                                          ),
-                                          onChanged: (value) {
-                                            final discount =
-                                                double.tryParse(value) ?? 0;
-                                            context.read<CashierBloc>().add(
-                                              ApplyGlobalDiscount(discount),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Diskon global (jika ada)
-                                if (state.globalDiscountAmount > 0)
-                                  _buildNominalRow(
-                                    'Diskon Global',
-                                    state.globalDiscountAmount,
-                                    Icons.discount,
-                                    Colors.red,
-                                    isDiscount: true,
-                                  ),
-                                if (state.globalDiscountAmount > 0)
-                                  const SizedBox(height: 12),
-
                                 // PPN per item (jika ada)
                                 if (state.itemTaxAmount > 0)
                                   _buildNominalRow(
@@ -426,89 +446,21 @@ class _CashierPageState extends State<CashierPage> {
                                 if (state.itemTaxAmount > 0)
                                   const SizedBox(height: 12),
 
-                                // Input PPN Global
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.purple[200]!,
-                                    ),
+                                // Show Diskon & PPN Global (jika ada)
+                                if (state.globalDiscountAmount > 0)
+                                  _buildNominalRow(
+                                    'Diskon Total',
+                                    state.globalDiscountAmount,
+                                    Icons.discount,
+                                    Colors.red,
+                                    isDiscount: true,
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.purple[100],
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.receipt,
-                                          color: Colors.purple[700],
-                                          size: 20,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      const Expanded(
-                                        child: Text(
-                                          'PPN Total',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 70,
-                                        child: TextField(
-                                          key: ValueKey(
-                                            'global_tax_${state.globalTax}',
-                                          ),
-                                          decoration: const InputDecoration(
-                                            hintText: '0',
-                                            suffix: Text('%'),
-                                            contentPadding:
-                                                EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 8,
-                                                ),
-                                            isDense: true,
-                                            border: OutlineInputBorder(),
-                                            filled: true,
-                                            fillColor: Colors.white,
-                                          ),
-                                          style: const TextStyle(fontSize: 12),
-                                          keyboardType: TextInputType.number,
-                                          textAlign: TextAlign.center,
-                                          controller: TextEditingController(
-                                            text:
-                                                state.globalTax > 0
-                                                    ? state.globalTax
-                                                        .toStringAsFixed(0)
-                                                    : '',
-                                          ),
-                                          onChanged: (value) {
-                                            final taxPercent =
-                                                double.tryParse(value) ?? 0;
-                                            context.read<CashierBloc>().add(
-                                              ApplyGlobalTax(taxPercent),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
+                                if (state.globalDiscountAmount > 0)
+                                  const SizedBox(height: 12),
 
-                                // PPN global (jika ada)
                                 if (state.globalTaxAmount > 0)
                                   _buildNominalRow(
-                                    'PPN Global',
+                                    'PPN Total',
                                     state.globalTaxAmount,
                                     Icons.receipt_long,
                                     Colors.purple,
@@ -519,110 +471,190 @@ class _CashierPageState extends State<CashierPage> {
                                 const Divider(),
                                 const SizedBox(height: 12),
 
-                                // Total
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green[50],
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.green[200]!,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.payments,
-                                          color: Colors.white,
-                                          size: 28,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'TOTAL BAYAR',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.green,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              CurrencyFormatter.format(
-                                                state.total,
-                                              ),
-                                              style: const TextStyle(
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.green,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                // Total Sebelum Pembulatan
+                                _buildNominalRow(
+                                  'Total',
+                                  state.total,
+                                  Icons.calculate,
+                                  Colors.grey[700]!,
                                 ),
+                                const SizedBox(height: 12),
 
-                                const SizedBox(height: 24),
-
-                                // Jumlah item
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[100],
-                                    borderRadius: BorderRadius.circular(8),
+                                // Pembulatan (jika ada)
+                                if (state.rounding != 0)
+                                  _buildNominalRow(
+                                    'Pembulatan',
+                                    state.rounding,
+                                    Icons.trending_flat,
+                                    state.rounding > 0
+                                        ? Colors.green
+                                        : Colors.orange,
+                                    isRounding: true,
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.shopping_cart,
-                                            color: Colors.grey[700],
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            'Jumlah Item',
-                                            style: TextStyle(
-                                              color: Colors.grey[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Text(
-                                        '${state.cartItems.length}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                if (state.rounding != 0)
+                                  const SizedBox(height: 12),
                               ],
                             ),
                           ),
                         ),
 
-                        // Tombol Aksi di bawah - HORIZONTAL
+                        // GRAND TOTAL BAYAR - FIXED POSITION
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            border: Border(
+                              top: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.payments,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'GRAND TOTAL',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      CurrencyFormatter.format(
+                                        state.grandTotal,
+                                      ),
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Menu Titik 3 untuk Diskon & PPN
+                              PopupMenuButton<String>(
+                                icon: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[100],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.more_vert,
+                                    color: Colors.green[700],
+                                  ),
+                                ),
+                                tooltip: 'Diskon & PPN',
+                                onSelected: (value) {
+                                  if (value == 'discount') {
+                                    _showDiscountDialog(context, state);
+                                  } else if (value == 'tax') {
+                                    _showTaxDialog(context, state);
+                                  }
+                                },
+                                itemBuilder:
+                                    (context) => [
+                                      PopupMenuItem(
+                                        value: 'discount',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.percent,
+                                              color: Colors.orange[700],
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Text('Diskon Total'),
+                                            if (state.globalDiscount > 0) ...[
+                                              const Spacer(),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange[100],
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '${state.globalDiscount.toStringAsFixed(0)}%',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.orange[700],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'tax',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.receipt,
+                                              color: Colors.purple[700],
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Text('PPN Total'),
+                                            if (state.globalTax > 0) ...[
+                                              const Spacer(),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.purple[100],
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '${state.globalTax.toStringAsFixed(0)}%',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.purple[700],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Tombol Aksi di bawah - BAYAR + MENU
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -643,82 +675,93 @@ class _CashierPageState extends State<CashierPage> {
                           ),
                           child: Row(
                             children: [
-                              // Tombol BATAL
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed:
-                                      state.cartItems.isEmpty
-                                          ? null
-                                          : () {
-                                            context.read<CashierBloc>().add(
-                                              ClearCart(),
-                                            );
-                                          },
-                                  icon: const Icon(Icons.clear, size: 20),
-                                  label: const Text(
-                                    'BATAL',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    side: BorderSide(
-                                      color: Colors.red[400]!,
+                              // Menu Titik 3 untuk BATAL & PENDING
+                              PopupMenuButton<String>(
+                                icon: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.grey[400]!,
                                       width: 2,
                                     ),
-                                    foregroundColor: Colors.red[400],
+                                  ),
+                                  child: Icon(
+                                    Icons.more_vert,
+                                    color: Colors.grey[700],
+                                    size: 28,
                                   ),
                                 ),
+                                tooltip: 'Opsi Lainnya',
+                                enabled: state.cartItems.isNotEmpty,
+                                onSelected: (value) {
+                                  if (value == 'batal') {
+                                    context.read<CashierBloc>().add(
+                                      ClearCart(),
+                                    );
+                                  } else if (value == 'pending') {
+                                    _savePending(state);
+                                  }
+                                },
+                                itemBuilder:
+                                    (context) => [
+                                      PopupMenuItem(
+                                        value: 'batal',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.clear,
+                                              color: Colors.red[400],
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Text(
+                                              'Batal Transaksi',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'pending',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.schedule,
+                                              color: Colors.orange[400],
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Text(
+                                              'Simpan Pending',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                               ),
                               const SizedBox(width: 12),
 
-                              // Tombol PENDING
+                              // Tombol BAYAR - FULL WIDTH
                               Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed:
-                                      state.cartItems.isEmpty
-                                          ? null
-                                          : () => _savePending(state),
-                                  icon: const Icon(Icons.schedule, size: 20),
-                                  label: const Text(
-                                    'PENDING',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    side: BorderSide(
-                                      color: Colors.orange[400]!,
-                                      width: 2,
-                                    ),
-                                    foregroundColor: Colors.orange[400],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-
-                              // Tombol BAYAR
-                              Expanded(
-                                flex: 2,
                                 child: ElevatedButton.icon(
                                   onPressed:
                                       state.cartItems.isEmpty
                                           ? null
-                                          : () =>
-                                              _showPaymentDialog(state.total),
-                                  icon: const Icon(Icons.payment, size: 24),
+                                          : () => _showPaymentDialog(
+                                            state.grandTotal,
+                                          ),
+                                  icon: const Icon(Icons.payment, size: 28),
                                   label: const Text(
                                     'BAYAR',
                                     style: TextStyle(
-                                      fontSize: 18,
+                                      fontSize: 20,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -726,9 +769,9 @@ class _CashierPageState extends State<CashierPage> {
                                     backgroundColor: Colors.green,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
+                                      vertical: 18,
                                     ),
-                                    elevation: 2,
+                                    elevation: 3,
                                   ),
                                 ),
                               ),
@@ -762,7 +805,15 @@ class _CashierPageState extends State<CashierPage> {
     IconData icon,
     Color color, {
     bool isDiscount = false,
+    bool isRounding = false,
   }) {
+    String prefix = '';
+    if (isDiscount) {
+      prefix = '-';
+    } else if (isRounding && amount != 0) {
+      prefix = amount > 0 ? '+' : '';
+    }
+
     return Row(
       children: [
         Container(
@@ -781,11 +832,18 @@ class _CashierPageState extends State<CashierPage> {
           ),
         ),
         Text(
-          '${isDiscount ? "-" : ""}${CurrencyFormatter.format(amount)}',
+          '$prefix${CurrencyFormatter.format(amount.abs())}',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: isDiscount ? Colors.red : Colors.black87,
+            color:
+                isDiscount
+                    ? Colors.red
+                    : isRounding && amount > 0
+                    ? Colors.green
+                    : isRounding && amount < 0
+                    ? Colors.orange
+                    : Colors.black87,
           ),
         ),
       ],
@@ -853,145 +911,426 @@ class _CashierPageState extends State<CashierPage> {
     );
   }
 
-  /// Show product search dialog
-  void _showProductSearchDialog() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            child: Container(
-              width: 600,
-              height: 700,
-              padding: const EdgeInsets.all(16),
-              child: Column(
+  /// Search customer by code (ONLINE ONLY)
+  Future<void> _searchCustomer(String customerCode) async {
+    if (customerCode.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan kode customer'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Check if online
+    final isOnline = socketService.isConnected;
+    if (!isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.wifi_off, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Pencarian customer memerlukan koneksi internet. Silakan hubungkan ke server terlebih dahulu.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSearchingCustomer = true;
+    });
+
+    try {
+      // Search customer via API using apiService from main.dart
+      final response = await apiService.getCustomerByCode(customerCode.trim());
+
+      if (response != null) {
+        setState(() {
+          _selectedCustomer = response;
+          _isSearchingCustomer = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
                 children: [
-                  // Header
-                  Row(
-                    children: [
-                      const Icon(Icons.search, size: 28),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'Cari Produk',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const Divider(),
-                  const SizedBox(height: 8),
-
-                  // Search field
-                  TextField(
-                    controller: _searchController,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: 'Ketik nama produk...',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Product list
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child:
-                        _filteredProducts.isEmpty
-                            ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.search_off,
-                                    size: 64,
-                                    color: Colors.grey[400],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'Produk tidak ditemukan',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                            : ListView.builder(
-                              itemCount: _filteredProducts.length,
-                              itemBuilder: (context, index) {
-                                final product = _filteredProducts[index];
-                                return ListTile(
-                                  leading: Container(
-                                    width: 50,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue[100],
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.shopping_bag,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    product.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '${product.barcode} • Stok: ${product.stock}',
-                                  ),
-                                  trailing: Text(
-                                    CurrencyFormatter.format(product.price),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                      color: Colors.green,
-                                    ),
-                                  ),
-                                  onTap: () {
-                                    // Add to cart
-                                    context.read<CashierBloc>().add(
-                                      AddToCart(product: product),
-                                    );
-
-                                    // Close dialog
-                                    Navigator.pop(context);
-
-                                    // Clear search
-                                    _searchController.clear();
-
-                                    // Show feedback
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          '${product.name} ditambahkan',
-                                        ),
-                                        backgroundColor: Colors.green,
-                                        duration: const Duration(seconds: 1),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
+                    child: Text('Customer ditemukan: ${response['name']}'),
                   ),
                 ],
               ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
             ),
+          );
+        }
+      } else {
+        setState(() {
+          _isSearchingCustomer = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Customer dengan kode "$customerCode" tidak ditemukan',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error searching customer: $e');
+      setState(() {
+        _isSearchingCustomer = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Gagal mencari customer: ${e.toString()}'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Show customer search dialog
+  void _showCustomerSearchDialog() {
+    final dialogCustomerCodeController = TextEditingController(
+      text: _customerCodeController.text,
+    );
+
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: Row(
+                  children: [
+                    const Icon(Icons.person_search, size: 24),
+                    const SizedBox(width: 12),
+                    const Text('Cari Customer'),
+                    const Spacer(),
+
+                    // Online/Offline indicator
+                  ],
+                ),
+                content: SizedBox(
+                  width: 400,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Masukkan kode customer untuk mencari:',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: dialogCustomerCodeController,
+                        decoration: InputDecoration(
+                          hintText: 'Contoh: CUST-001',
+                          prefixIcon: const Icon(Icons.qr_code),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                        autofocus: true,
+                        onSubmitted: (value) {
+                          if (value.trim().isNotEmpty) {
+                            _searchCustomer(value.trim());
+                            Navigator.pop(dialogContext);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.blue[700],
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Pencarian customer hanya bisa dilakukan saat ONLINE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.blue[900],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('BATAL'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed:
+                        _isSearchingCustomer
+                            ? null
+                            : () {
+                              final code =
+                                  dialogCustomerCodeController.text.trim();
+                              if (code.isNotEmpty) {
+                                _customerCodeController.text = code;
+                                _searchCustomer(code);
+                                Navigator.pop(dialogContext);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Masukkan kode customer'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                            },
+                    icon:
+                        _isSearchingCustomer
+                            ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                            : const Icon(Icons.search),
+                    label: const Text('CARI'),
+                  ),
+                ],
+              );
+            },
+          ),
+    );
+  }
+
+  /// Show product search dialog
+  void _showProductSearchDialog() {
+    // Reset search
+    _searchController.clear();
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              return Dialog(
+                child: Container(
+                  width: 600,
+                  height: 700,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // Header
+                      Row(
+                        children: [
+                          const Icon(Icons.search, size: 28),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Cari Produk',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                      const Divider(),
+                      const SizedBox(height: 8),
+
+                      // Search field
+                      TextField(
+                        controller: _searchController,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Ketik nama produk...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon:
+                              _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setDialogState(() {
+                                        _filterProducts();
+                                      });
+                                    },
+                                  )
+                                  : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                        ),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            _filterProducts();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Product list
+                      Expanded(
+                        child:
+                            _filteredProducts.isEmpty
+                                ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.search_off,
+                                        size: 64,
+                                        color: Colors.grey[400],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _searchController.text.isEmpty
+                                            ? 'Ketik untuk mencari produk'
+                                            : 'Produk tidak ditemukan',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                                : ListView.builder(
+                                  itemCount: _filteredProducts.length,
+                                  itemBuilder: (context, index) {
+                                    final product = _filteredProducts[index];
+                                    return ListTile(
+                                      leading: Container(
+                                        width: 50,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue[100],
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.shopping_bag,
+                                          color: Colors.blue,
+                                        ),
+                                      ),
+                                      title: Text(
+                                        product.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        '${product.barcode} • Stok: ${product.stock}',
+                                      ),
+                                      trailing: Text(
+                                        CurrencyFormatter.format(product.price),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        // Add to cart
+                                        context.read<CashierBloc>().add(
+                                          AddToCart(product: product),
+                                        );
+
+                                        // Close dialog
+                                        Navigator.pop(context);
+
+                                        // Clear search
+                                        _searchController.clear();
+                                        _filterProducts();
+
+                                        // Show feedback
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              '${product.name} ditambahkan',
+                                            ),
+                                            backgroundColor: Colors.green,
+                                            duration: const Duration(
+                                              seconds: 1,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
     );
   }
@@ -1212,8 +1551,8 @@ class _CashierPageState extends State<CashierPage> {
       columnWidths: const {
         0: FixedColumnWidth(40), // No
         1: FlexColumnWidth(3), // Produk
-        2: FixedColumnWidth(80), // Harga
-        3: FixedColumnWidth(100), // Qty
+        2: FixedColumnWidth(120), // Harga (lebih lebar)
+        3: FixedColumnWidth(140), // Qty (lebih lebar)
         4: FixedColumnWidth(60), // Disc%
         5: FixedColumnWidth(60), // PPN%
         6: FixedColumnWidth(100), // Total
@@ -1699,7 +2038,12 @@ class _CashierPageState extends State<CashierPage> {
                   final paid = double.tryParse(paidController.text) ?? 0;
                   if (paid >= total) {
                     context.read<CashierBloc>().add(
-                      ProcessPayment(paidAmount: paid, paymentMethod: 'cash'),
+                      ProcessPayment(
+                        paidAmount: paid,
+                        paymentMethod: 'cash',
+                        customerId: _selectedCustomer?['id']?.toString(),
+                        customerName: _selectedCustomer?['name']?.toString(),
+                      ),
                     );
                     Navigator.pop(dialogContext);
                   } else {
@@ -1719,42 +2063,355 @@ class _CashierPageState extends State<CashierPage> {
   }
 
   void _showPaymentSuccessDialog(PaymentSuccess state) {
+    // Reset customer setelah transaksi selesai
+    setState(() {
+      _selectedCustomer = null;
+      _customerCodeController.clear();
+    });
+
+    // Ambil settings untuk auto print
+    final settings = cashierSettingsService.getSettings();
+
+    // Jika auto print enabled, langsung cetak
+    if (settings.autoPrintReceipt) {
+      // Auto print di background
+      Future.microtask(() {
+        PrintOptionsDialog.autoPrintReceipt(
+          context: context,
+          sale: state.sale,
+          format: settings.defaultPrintFormat,
+        );
+      });
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder:
           (context) => AlertDialog(
-            title: const Text('Pembayaran Berhasil!'),
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 32),
+                SizedBox(width: 12),
+                Text('Pembayaran Berhasil!'),
+              ],
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Invoice: ${state.sale.invoiceNumber}'),
-                const SizedBox(height: 8),
-                Text(
-                  'Total: ${CurrencyFormatter.format(state.sale.total)}',
-                  style: const TextStyle(fontSize: 18),
-                ),
-                Text(
-                  'Bayar: ${CurrencyFormatter.format(state.sale.paid)}',
-                  style: const TextStyle(fontSize: 18),
-                ),
-                Text(
-                  'Kembalian: ${CurrencyFormatter.format(state.change)}',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
+                // Info transaksi
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Invoice: ${state.sale.invoiceNumber}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const Divider(),
+                      Text(
+                        'Total: ${CurrencyFormatter.format(state.sale.total)}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      if (state.sale.rounding != 0)
+                        Text(
+                          'Pembulatan: ${state.sale.rounding > 0 ? '+' : ''}${CurrencyFormatter.format(state.sale.rounding)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color:
+                                state.sale.rounding > 0
+                                    ? Colors.green
+                                    : Colors.orange,
+                          ),
+                        ),
+                      Text(
+                        'Grand Total: ${CurrencyFormatter.format(state.sale.grandTotal)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Bayar: ${CurrencyFormatter.format(state.sale.paid)}',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Kembalian: ${CurrencyFormatter.format(state.change)}',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+
+                const SizedBox(height: 16),
+
+                // Info auto print
+                if (settings.autoPrintReceipt)
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.print, color: Colors.blue[700], size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Nota sedang dicetak otomatis...',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue[900],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
             actions: [
+              // Tombol Print Manual (jika user ingin print ulang atau format lain)
+              TextButton.icon(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => PrintOptionsDialog(sale: state.sale),
+                  );
+                },
+                icon: const Icon(Icons.print),
+                label: const Text('Cetak Ulang'),
+              ),
+              const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
                 },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
                 child: const Text('OK'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// Show discount dialog
+  void _showDiscountDialog(BuildContext context, CashierLoaded state) {
+    final discountController = TextEditingController(
+      text:
+          state.globalDiscount > 0
+              ? state.globalDiscount.toStringAsFixed(0)
+              : '',
+    );
+
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.percent, color: Colors.orange[700]),
+                ),
+                const SizedBox(width: 12),
+                const Text('Diskon Total'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Subtotal: ${CurrencyFormatter.format(state.subtotal)}',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: discountController,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Diskon (%)',
+                    hintText: 'Masukkan persen diskon',
+                    border: const OutlineInputBorder(),
+                    suffixText: '%',
+                    suffixIcon: Icon(Icons.percent, color: Colors.orange[700]),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (state.globalDiscountAmount > 0)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange[200]!),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Potongan:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '-${CurrencyFormatter.format(state.globalDiscountAmount)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Reset discount
+                  context.read<CashierBloc>().add(ApplyGlobalDiscount(0));
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('HAPUS'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final discount =
+                      double.tryParse(discountController.text) ?? 0;
+                  context.read<CashierBloc>().add(
+                    ApplyGlobalDiscount(discount),
+                  );
+                  Navigator.pop(dialogContext);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('TERAPKAN'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  /// Show tax (PPN) dialog
+  void _showTaxDialog(BuildContext context, CashierLoaded state) {
+    final taxController = TextEditingController(
+      text: state.globalTax > 0 ? state.globalTax.toStringAsFixed(0) : '',
+    );
+
+    showDialog(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.purple[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.receipt, color: Colors.purple[700]),
+                ),
+                const SizedBox(width: 12),
+                const Text('PPN Total'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Subtotal: ${CurrencyFormatter.format(state.subtotal - state.totalDiscountAmount)}',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: taxController,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'PPN (%)',
+                    hintText: 'Masukkan persen PPN',
+                    border: const OutlineInputBorder(),
+                    suffixText: '%',
+                    suffixIcon: Icon(Icons.receipt, color: Colors.purple[700]),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (state.globalTaxAmount > 0)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.purple[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.purple[200]!),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Tambahan PPN:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '+${CurrencyFormatter.format(state.globalTaxAmount)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Reset tax
+                  context.read<CashierBloc>().add(ApplyGlobalTax(0));
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('HAPUS'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final tax = double.tryParse(taxController.text) ?? 0;
+                  context.read<CashierBloc>().add(ApplyGlobalTax(tax));
+                  Navigator.pop(dialogContext);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('TERAPKAN'),
               ),
             ],
           ),

@@ -7,6 +7,7 @@ import '../../data/models/sale_model.dart';
 import '../../../../core/database/hive_service.dart';
 import '../../../sync/data/datasources/sync_service.dart';
 import '../../../../main.dart' show cashierSettingsService;
+import '../../../../core/utils/rounding_utils.dart';
 
 // Events
 abstract class CashierEvent extends Equatable {
@@ -138,6 +139,8 @@ class CashierLoaded extends CashierState {
   final double globalTaxAmount;
   final double totalTaxAmount;
   final double total;
+  final double rounding;
+  final double grandTotal;
 
   CashierLoaded({
     required this.cartItems,
@@ -151,6 +154,8 @@ class CashierLoaded extends CashierState {
     required this.globalTaxAmount,
     required this.totalTaxAmount,
     required this.total,
+    this.rounding = 0,
+    required this.grandTotal,
   });
 
   @override
@@ -166,6 +171,8 @@ class CashierLoaded extends CashierState {
     globalTaxAmount,
     totalTaxAmount,
     total,
+    rounding,
+    grandTotal,
   ];
 }
 
@@ -351,7 +358,9 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
         try {
           final productData = _hiveService.productsBox.get(item.product.id);
           if (productData != null && productData is Map) {
-            final costPrice = (productData['cost_price'] ?? 0).toDouble();
+            // Safe conversion for cost_price (bisa String, int, atau double)
+            final costPriceRaw = productData['cost_price'] ?? 0;
+            final costPrice = _toDouble(costPriceRaw);
             totalCost += costPrice * item.quantity;
           }
         } catch (e) {
@@ -362,13 +371,20 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       final grossProfit = calculations['total']! - totalCost;
       final profitMargin =
           calculations['total']! > 0
-              ? ((grossProfit / calculations['total']!) * 100).toDouble()
+              ? (grossProfit / calculations['total']!) * 100
               : 0.0;
 
       // Get device info from cashier settings
       final deviceInfo = cashierSettingsService.getDeviceInfoForTransaction();
       final cashierLocation =
           cashierSettingsService.getCashierLocation() ?? cashierName;
+
+      // Calculate rounding (bulatkan ke Rp 100 terdekat)
+      final roundedTotal = RoundingUtils.roundTo100(calculations['total']!);
+      final rounding = RoundingUtils.calculateRounding(
+        calculations['total']!,
+        roundedTotal,
+      );
 
       // Create sale
       final sale = SaleModel(
@@ -380,8 +396,10 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
         discount: calculations['totalDiscountAmount']!,
         tax: calculations['totalTaxAmount']!,
         total: calculations['total']!,
+        rounding: rounding,
+        grandTotal: roundedTotal,
         paid: event.paidAmount,
-        change: event.paidAmount - calculations['total']!,
+        change: event.paidAmount - roundedTotal,
         paymentMethod: event.paymentMethod,
         customerId: event.customerId,
         customerName: event.customerName,
@@ -470,6 +488,10 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     // Final total
     final total = afterAllDiscounts + totalTaxAmount;
 
+    // Rounding (bulatkan ke Rp 100 terdekat)
+    final roundedTotal = RoundingUtils.roundTo100(total);
+    final rounding = RoundingUtils.calculateRounding(total, roundedTotal);
+
     // Debug print
     print('💰 CALCULATION DEBUG:');
     print('   Subtotal: $subtotal');
@@ -479,7 +501,9 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     print('   Item Tax: $itemTaxAmount');
     print('   Global Tax ($_globalTax%): $globalTaxAmount');
     print('   Total Tax: $totalTaxAmount');
-    print('   FINAL TOTAL: $total');
+    print('   Total: $total');
+    print('   Rounding: ${RoundingUtils.formatRounding(rounding)}');
+    print('   GRAND TOTAL: $roundedTotal');
 
     return {
       'subtotal': subtotal,
@@ -490,6 +514,8 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
       'globalTaxAmount': globalTaxAmount,
       'totalTaxAmount': totalTaxAmount,
       'total': total,
+      'rounding': rounding,
+      'grandTotal': roundedTotal,
     };
   }
 
@@ -508,6 +534,8 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
         globalTaxAmount: calculations['globalTaxAmount'] ?? 0,
         totalTaxAmount: calculations['totalTaxAmount'] ?? 0,
         total: calculations['total'] ?? 0,
+        rounding: calculations['rounding'] ?? 0,
+        grandTotal: calculations['grandTotal'] ?? 0,
       ),
     );
   }
@@ -519,5 +547,16 @@ class CashierBloc extends Bloc<CashierEvent, CashierState> {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
     return 'INV-$dateStr-$timeStr';
+  }
+
+  /// Helper: Convert dynamic value to double safely
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
   }
 }

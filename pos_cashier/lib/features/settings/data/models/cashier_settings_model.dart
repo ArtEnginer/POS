@@ -27,6 +27,9 @@ class CashierSettingsModel extends Equatable {
   final bool autoPrintReceipt;
   final bool requireCustomerDisplay;
 
+  // Print Settings
+  final String defaultPrintFormat; // 'receipt', 'invoice', 'delivery_note'
+
   // Additional Settings (flexible JSON)
   final Map<String, dynamic> additionalSettings;
 
@@ -47,6 +50,7 @@ class CashierSettingsModel extends Equatable {
     this.allowOfflineMode = true,
     this.autoPrintReceipt = true,
     this.requireCustomerDisplay = false,
+    this.defaultPrintFormat = 'receipt',
     this.additionalSettings = const {},
     this.updatedAt,
   });
@@ -81,6 +85,7 @@ class CashierSettingsModel extends Equatable {
       'allow_offline_mode': allowOfflineMode,
       'auto_print_receipt': autoPrintReceipt,
       'require_customer_display': requireCustomerDisplay,
+      'default_print_format': defaultPrintFormat,
       'additional_settings': additionalSettings,
       'updated_at': DateTime.now().toIso8601String(),
     };
@@ -103,6 +108,7 @@ class CashierSettingsModel extends Equatable {
       allowOfflineMode: map['allow_offline_mode'] as bool? ?? true,
       autoPrintReceipt: map['auto_print_receipt'] as bool? ?? true,
       requireCustomerDisplay: map['require_customer_display'] as bool? ?? false,
+      defaultPrintFormat: map['default_print_format']?.toString() ?? 'receipt',
       additionalSettings: Map<String, dynamic>.from(
         map['additional_settings'] as Map? ?? {},
       ),
@@ -139,6 +145,7 @@ class CashierSettingsModel extends Equatable {
     bool? allowOfflineMode,
     bool? autoPrintReceipt,
     bool? requireCustomerDisplay,
+    String? defaultPrintFormat,
     Map<String, dynamic>? additionalSettings,
   }) {
     return CashierSettingsModel(
@@ -157,6 +164,7 @@ class CashierSettingsModel extends Equatable {
       autoPrintReceipt: autoPrintReceipt ?? this.autoPrintReceipt,
       requireCustomerDisplay:
           requireCustomerDisplay ?? this.requireCustomerDisplay,
+      defaultPrintFormat: defaultPrintFormat ?? this.defaultPrintFormat,
       additionalSettings: additionalSettings ?? this.additionalSettings,
       updatedAt: DateTime.now(),
     );
@@ -178,6 +186,7 @@ class CashierSettingsModel extends Equatable {
     allowOfflineMode,
     autoPrintReceipt,
     requireCustomerDisplay,
+    defaultPrintFormat,
     additionalSettings,
     updatedAt,
   ];

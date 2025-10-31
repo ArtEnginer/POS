@@ -7,6 +7,7 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/database/hive_service.dart';
 import '../widgets/sales_return_dialog_v2.dart';
 import '../widgets/print_options_dialog.dart';
+import 'submitted_returns_page.dart';
 
 class SalesHistoryPage extends StatefulWidget {
   const SalesHistoryPage({super.key});
@@ -146,59 +147,60 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
   ) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hapus Retur?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Apakah Anda yakin ingin menghapus retur ini?'),
-            const SizedBox(height: 12),
-            Text(
-              'No. Retur: ${returnData.returnNumber}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text(
-              'Total Refund: ${CurrencyFormatter.format(returnData.refundAmount)}',
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.orange),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning, color: Colors.orange, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Stok akan dikembalikan seperti sebelum retur',
-                      style: TextStyle(fontSize: 12),
-                    ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Hapus Retur?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Apakah Anda yakin ingin menghapus retur ini?'),
+                const SizedBox(height: 12),
+                Text(
+                  'No. Retur: ${returnData.returnNumber}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Total Refund: ${CurrencyFormatter.format(returnData.refundAmount)}',
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.orange),
                   ),
-                ],
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Stok akan dikembalikan seperti sebelum retur',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Batal'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Hapus'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Hapus'),
-          ),
-        ],
-      ),
     );
 
     if (confirm == true) {
@@ -225,19 +227,20 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(),
-          ),
+          builder:
+              (context) => const Center(child: CircularProgressIndicator()),
         );
       }
 
-      final response = await http.delete(
-        Uri.parse('$serverUrl/api/v2/sales-returns/$returnId'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .delete(
+            Uri.parse('$serverUrl/api/v2/sales-returns/$returnId'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
 
       // Close loading
       if (mounted) Navigator.pop(context);
@@ -262,10 +265,7 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
       print('❌ Error deleting return: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -315,6 +315,19 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
         title: const Text('Riwayat Transaksi'),
         elevation: 2,
         actions: [
+          // Button to view submitted returns
+          IconButton(
+            icon: const Icon(Icons.assignment_return),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SubmittedReturnsPage(),
+                ),
+              );
+            },
+            tooltip: 'Daftar Retur',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => _loadSales(resetPage: true),
@@ -759,10 +772,9 @@ class _SalesHistoryPageState extends State<SalesHistoryPage> {
                               const SizedBox(width: 8),
                               // Delete button
                               InkWell(
-                                onTap: () => _confirmDeleteReturn(
-                                  sale,
-                                  returnData,
-                                ),
+                                onTap:
+                                    () =>
+                                        _confirmDeleteReturn(sale, returnData),
                                 borderRadius: BorderRadius.circular(4),
                                 child: Container(
                                   padding: const EdgeInsets.all(4),

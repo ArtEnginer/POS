@@ -39,4 +39,7 @@ router.get(
   salesReturnController.getReturnsBySaleId
 );
 
+// Delete return (soft delete)
+router.delete("/:id", authenticateToken, salesReturnController.deleteReturn);
+
 export default router;

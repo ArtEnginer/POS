@@ -93,10 +93,44 @@ export const getCustomerById = async (req, res) => {
 export const searchCustomers = async (req, res) => {
   const { q: query } = req.query;
 
+  logger.info(`🔍 Search customers called with query: "${query}"`);
+
   if (!query) {
+    logger.warn("Search query is missing");
     throw new ValidationError("Search query is required");
   }
 
+  // Try exact match first (for code lookup)
+  const exactMatchQuery = `
+    SELECT c.*
+    FROM customers c
+    WHERE c.deleted_at IS NULL
+    AND (
+      UPPER(c.code) = UPPER($1) OR
+      UPPER(c.phone) = UPPER($1) OR
+      UPPER(c.email) = UPPER($1)
+    )
+    ORDER BY c.name ASC
+    LIMIT 10
+  `;
+
+  logger.info(`🔍 Trying exact match for: "${query.trim()}"`);
+  const exactResult = await db.query(exactMatchQuery, [query.trim()]);
+
+  // If exact match found, return it
+  if (exactResult.rows.length > 0) {
+    logger.info(
+      `✅ Customer exact match found: ${query} - ${exactResult.rows.length} results`
+    );
+    return res.json({
+      success: true,
+      data: exactResult.rows,
+    });
+  }
+
+  logger.info(`🔍 No exact match, trying partial match for: "${query}"`);
+
+  // Otherwise, do partial match search
   const searchQuery = `
     SELECT c.*
     FROM customers c
@@ -112,6 +146,10 @@ export const searchCustomers = async (req, res) => {
   `;
 
   const result = await db.query(searchQuery, [`%${query}%`]);
+
+  logger.info(
+    `📊 Customer search: ${query} - Found ${result.rows.length} results`
+  );
 
   res.json({
     success: true,

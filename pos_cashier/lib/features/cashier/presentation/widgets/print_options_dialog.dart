@@ -8,8 +8,47 @@ import '../../../../core/database/hive_service.dart';
 
 class PrintOptionsDialog extends StatelessWidget {
   final SaleModel sale;
+  final bool? autoPrint; // jika true, langsung print tanpa dialog
 
-  const PrintOptionsDialog({super.key, required this.sale});
+  const PrintOptionsDialog({super.key, required this.sale, this.autoPrint});
+
+  /// Static method untuk auto print berdasarkan settings
+  static Future<void> autoPrintReceipt({
+    required BuildContext context,
+    required SaleModel sale,
+    required String format,
+  }) async {
+    try {
+      pw.Document pdf;
+
+      switch (format) {
+        case 'receipt':
+          pdf = await PrintOptionsDialog(sale: sale)._generateReceipt();
+          break;
+        case 'invoice':
+          pdf = await PrintOptionsDialog(sale: sale)._generateInvoice();
+          break;
+        case 'delivery_note':
+          pdf = await PrintOptionsDialog(sale: sale)._generateDeliveryNote();
+          break;
+        default:
+          pdf = await PrintOptionsDialog(sale: sale)._generateReceipt();
+      }
+
+      await Printing.layoutPdf(onLayout: (format) => pdf.save());
+      print('✅ Auto print berhasil: $format');
+    } catch (e) {
+      print('❌ Auto print gagal: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mencetak: $e'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,9 +214,12 @@ class PrintOptionsDialog extends StatelessWidget {
                     // Item name
                     pw.Text(
                       item.product.name,
-                      style: const pw.TextStyle(fontSize: 10),
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
-                    // Item quantity x price = total
+                    // Item quantity x price = subtotal
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
@@ -186,14 +228,81 @@ class PrintOptionsDialog extends StatelessWidget {
                           style: const pw.TextStyle(fontSize: 9),
                         ),
                         pw.Text(
-                          _formatCurrency(item.product.price * item.quantity),
-                          style: pw.TextStyle(
-                            fontSize: 9,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
+                          _formatCurrency(item.subtotal),
+                          style: const pw.TextStyle(fontSize: 9),
                         ),
                       ],
                     ),
+
+                    // Show discount if any
+                    if (item.discount > 0) ...[
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '  Diskon ${item.discount.toStringAsFixed(0)}%',
+                            style: const pw.TextStyle(
+                              fontSize: 8,
+                              color: PdfColors.red,
+                            ),
+                          ),
+                          pw.Text(
+                            '-${_formatCurrency(item.discountAmount)}',
+                            style: const pw.TextStyle(
+                              fontSize: 8,
+                              color: PdfColors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    // Show tax if any
+                    if (item.taxPercent > 0) ...[
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '  PPN ${item.taxPercent.toStringAsFixed(0)}%',
+                            style: const pw.TextStyle(
+                              fontSize: 8,
+                              color: PdfColors.blue,
+                            ),
+                          ),
+                          pw.Text(
+                            '+${_formatCurrency(item.taxAmount)}',
+                            style: const pw.TextStyle(
+                              fontSize: 8,
+                              color: PdfColors.blue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    // Item total (after discount & tax)
+                    if (item.discount > 0 || item.taxPercent > 0) ...[
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '  Total Item',
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                          pw.Text(
+                            _formatCurrency(item.total),
+                            style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
                     // Show returns for this item
                     if (itemReturns.isNotEmpty) ...[
                       pw.SizedBox(height: 2),
@@ -234,7 +343,7 @@ class PrintOptionsDialog extends StatelessWidget {
                           ),
                           pw.Text(
                             _formatCurrency(
-                              (item.product.price * item.quantity) -
+                              item.total -
                                   itemReturns.fold<double>(
                                     0.0,
                                     (sum, r) => sum + r.subtotal,
@@ -248,19 +357,28 @@ class PrintOptionsDialog extends StatelessWidget {
                         ],
                       ),
                     ],
+                    pw.SizedBox(height: 5),
+                    pw.Divider(height: 1, color: PdfColors.grey300),
                     pw.SizedBox(height: 3),
                   ],
                 );
               }),
-
-              pw.Divider(),
 
               // Totals
               _buildTotalRow('Subtotal', sale.subtotal),
               if (sale.discount > 0) _buildTotalRow('Diskon', -sale.discount),
               if (sale.tax > 0) _buildTotalRow('Pajak', sale.tax),
               pw.Divider(thickness: 2),
-              _buildTotalRow('TOTAL', sale.total, bold: true, fontSize: 12),
+              _buildTotalRow('Total', sale.total),
+              if (sale.rounding != 0)
+                _buildTotalRow('Pembulatan', sale.rounding),
+              pw.Divider(thickness: 2),
+              _buildTotalRow(
+                'GRAND TOTAL',
+                sale.grandTotal,
+                bold: true,
+                fontSize: 12,
+              ),
 
               // Returns (if any)
               if (sale.hasReturns) ...[
@@ -397,6 +515,15 @@ class PrintOptionsDialog extends StatelessWidget {
               // Items Table
               pw.Table(
                 border: pw.TableBorder.all(color: PdfColors.grey),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(40), // No
+                  1: const pw.FlexColumnWidth(3), // Nama
+                  2: const pw.FixedColumnWidth(50), // Qty
+                  3: const pw.FixedColumnWidth(80), // Harga
+                  4: const pw.FixedColumnWidth(70), // Disc
+                  5: const pw.FixedColumnWidth(70), // PPN
+                  6: const pw.FixedColumnWidth(90), // Total
+                },
                 children: [
                   // Header
                   pw.TableRow(
@@ -417,13 +544,23 @@ class PrintOptionsDialog extends StatelessWidget {
                         align: pw.TextAlign.right,
                       ),
                       _buildTableCell(
+                        'Disc',
+                        bold: true,
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
+                        'PPN',
+                        bold: true,
+                        align: pw.TextAlign.right,
+                      ),
+                      _buildTableCell(
                         'Total',
                         bold: true,
                         align: pw.TextAlign.right,
                       ),
                     ],
                   ),
-                  // Items with returns
+                  // Items with details
                   ...sale.items.asMap().entries.expand((entry) {
                     final idx = entry.key;
                     final item = entry.value;
@@ -453,7 +590,28 @@ class PrintOptionsDialog extends StatelessWidget {
                       pw.TableRow(
                         children: [
                           _buildTableCell((idx + 1).toString()),
-                          _buildTableCell(item.product.name),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Text(
+                                  item.product.name,
+                                  style: pw.TextStyle(
+                                    fontWeight: pw.FontWeight.bold,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                pw.Text(
+                                  '${item.quantity} x ${_formatCurrency(item.product.price)}',
+                                  style: const pw.TextStyle(
+                                    fontSize: 8,
+                                    color: PdfColors.grey700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           _buildTableCell(
                             item.quantity.toString(),
                             align: pw.TextAlign.center,
@@ -462,9 +620,42 @@ class PrintOptionsDialog extends StatelessWidget {
                             _formatCurrency(item.product.price),
                             align: pw.TextAlign.right,
                           ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              item.discount > 0
+                                  ? '${item.discount.toStringAsFixed(0)}%\n-${_formatCurrency(item.discountAmount)}'
+                                  : '-',
+                              style: pw.TextStyle(
+                                fontSize: 8,
+                                color:
+                                    item.discount > 0
+                                        ? PdfColors.red
+                                        : PdfColors.black,
+                              ),
+                              textAlign: pw.TextAlign.right,
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text(
+                              item.taxPercent > 0
+                                  ? '${item.taxPercent.toStringAsFixed(0)}%\n+${_formatCurrency(item.taxAmount)}'
+                                  : '-',
+                              style: pw.TextStyle(
+                                fontSize: 8,
+                                color:
+                                    item.taxPercent > 0
+                                        ? PdfColors.blue
+                                        : PdfColors.black,
+                              ),
+                              textAlign: pw.TextAlign.right,
+                            ),
+                          ),
                           _buildTableCell(
-                            _formatCurrency(item.product.price * item.quantity),
+                            _formatCurrency(item.total),
                             align: pw.TextAlign.right,
+                            bold: true,
                           ),
                         ],
                       ),
@@ -604,9 +795,13 @@ class PrintOptionsDialog extends StatelessWidget {
                         if (sale.tax > 0)
                           _buildInvoiceTotalRow('Pajak', sale.tax),
                         pw.Divider(thickness: 2),
+                        _buildInvoiceTotalRow('Total', sale.total),
+                        if (sale.rounding != 0)
+                          _buildInvoiceTotalRow('Pembulatan', sale.rounding),
+                        pw.Divider(thickness: 2),
                         _buildInvoiceTotalRow(
-                          'TOTAL',
-                          sale.total,
+                          'GRAND TOTAL',
+                          sale.grandTotal,
                           bold: true,
                           fontSize: 16,
                         ),

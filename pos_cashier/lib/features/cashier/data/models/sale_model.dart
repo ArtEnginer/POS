@@ -13,6 +13,8 @@ class SaleModel extends Equatable {
   final double discount;
   final double tax;
   final double total;
+  final double rounding; // Pembulatan (bisa positif atau negatif)
+  final double grandTotal; // Total setelah pembulatan
   final double paid;
   final double change;
   final String paymentMethod; // cash, card, qris, etc
@@ -45,6 +47,8 @@ class SaleModel extends Equatable {
     required this.discount,
     required this.tax,
     required this.total,
+    this.rounding = 0,
+    double? grandTotal,
     required this.paid,
     required this.change,
     required this.paymentMethod,
@@ -62,7 +66,7 @@ class SaleModel extends Equatable {
     this.cashierLocation,
     this.deviceInfo,
     this.returns = const [],
-  });
+  }) : grandTotal = grandTotal ?? total + rounding;
 
   factory SaleModel.fromJson(Map<String, dynamic> json) {
     return SaleModel(
@@ -293,6 +297,16 @@ class SaleModel extends Equatable {
           (json['total'] is num)
               ? (json['total'] as num).toDouble()
               : double.tryParse(json['total']?.toString() ?? '0') ?? 0.0,
+      rounding:
+          (json['rounding'] is num)
+              ? (json['rounding'] as num).toDouble()
+              : double.tryParse(json['rounding']?.toString() ?? '0') ?? 0.0,
+      grandTotal:
+          (json['grand_total'] is num)
+              ? (json['grand_total'] as num).toDouble()
+              : (json['grandTotal'] is num)
+              ? (json['grandTotal'] as num).toDouble()
+              : null,
       paid:
           (json['paidAmount'] is num)
               ? (json['paidAmount'] as num).toDouble()
@@ -397,6 +411,8 @@ class SaleModel extends Equatable {
       'discount': discount,
       'tax': tax,
       'total': total,
+      'rounding': rounding,
+      'grand_total': grandTotal,
       'paid': paid,
       'change': change,
       'payment_method': paymentMethod,
@@ -426,6 +442,8 @@ class SaleModel extends Equatable {
     double? discount,
     double? tax,
     double? total,
+    double? rounding,
+    double? grandTotal,
     double? paid,
     double? change,
     String? paymentMethod,
@@ -454,6 +472,8 @@ class SaleModel extends Equatable {
       discount: discount ?? this.discount,
       tax: tax ?? this.tax,
       total: total ?? this.total,
+      rounding: rounding ?? this.rounding,
+      grandTotal: grandTotal ?? this.grandTotal,
       paid: paid ?? this.paid,
       change: change ?? this.change,
       paymentMethod: paymentMethod ?? this.paymentMethod,
@@ -485,6 +505,8 @@ class SaleModel extends Equatable {
     discount,
     tax,
     total,
+    rounding,
+    grandTotal,
     paid,
     change,
     paymentMethod,
@@ -510,7 +532,7 @@ class SaleModel extends Equatable {
       0.0,
       (sum, ret) => sum + ret.refundAmount,
     );
-    return total - totalReturns;
+    return grandTotal - totalReturns;
   }
 
   // Helper method to check if sale has returns

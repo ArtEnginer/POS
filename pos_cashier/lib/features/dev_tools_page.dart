@@ -96,12 +96,7 @@ class _DevToolsPageState extends State<DevToolsPage> {
     try {
       _addOutput('Products: ${HiveService.instance.productsBox.length} items');
       _addOutput('Sales: ${HiveService.instance.salesBox.length} items');
-      _addOutput(
-        'Customers: ${HiveService.instance.customersBox.length} items',
-      );
-      _addOutput(
-        'Categories: ${HiveService.instance.categoriesBox.length} items',
-      );
+
       _addOutput('Settings: ${HiveService.instance.settingsBox.length} items');
       _addOutput('Auth: ${HiveService.instance.authBox.length} items');
     } catch (e) {

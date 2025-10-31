@@ -222,6 +222,38 @@ class ApiService {
     }
   }
 
+  /// Get customer by code
+  Future<Map<String, dynamic>?> getCustomerByCode(String customerCode) async {
+    try {
+      final response = await _dio.get(
+        '${AppConstants.customersEndpoint}/search',
+        queryParameters: {'q': customerCode},
+      );
+
+      if (response.data['success'] == true) {
+        final customers = List<Map<String, dynamic>>.from(
+          response.data['data'] ?? [],
+        );
+
+        if (customers.isNotEmpty) {
+          // Find exact match by code (case-insensitive)
+          final exactMatch = customers.firstWhere(
+            (c) =>
+                c['code']?.toString().toUpperCase() ==
+                customerCode.toUpperCase(),
+            orElse: () => customers.first,
+          );
+
+          return exactMatch;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error fetching customer by code: $e');
+      return null;
+    }
+  }
+
   /// Sync sale to server (Backend V2 format)
   Future<bool> syncSale(Map<String, dynamic> saleData) async {
     try {
@@ -355,6 +387,12 @@ class ApiService {
         'discountPercentage': 0,
         'taxAmount': saleData['tax'] ?? 0,
         'totalAmount': saleData['total'],
+        // Rounding fields (new)
+        'rounding': saleData['rounding'] ?? 0,
+        'grandTotal':
+            saleData['grand_total'] ??
+            saleData['grandTotal'] ??
+            saleData['total'],
         'paidAmount': saleData['paid'],
         'changeAmount': saleData['change'],
         'paymentMethod': saleData['payment_method'] ?? 'cash',

@@ -120,12 +120,20 @@ class _SalesReturnDialogV2State extends State<SalesReturnDialogV2> {
       for (var item in _selectedSale!.items) {
         final returnQty = _returnQuantities[item.product.id] ?? 0;
         if (returnQty > 0) {
+          // Calculate proportional values for return quantity
+          final qtyRatio = returnQty / item.quantity;
+
           returnItemsJson.add({
             'productId': int.tryParse(item.product.id) ?? 0,
             'productName': item.product.name,
             'quantity': returnQty,
             'unitPrice': item.product.price,
-            'subtotal': item.product.price * returnQty,
+            'discountAmount': item.discountAmount * qtyRatio,
+            'discountPercentage': item.discount,
+            'taxAmount': item.taxAmount * qtyRatio,
+            'taxPercentage': item.taxPercent,
+            'subtotal': item.subtotal * qtyRatio,
+            'total': item.total * qtyRatio,
             'reason': _reasonController.text.trim(),
           });
         }
@@ -251,17 +259,33 @@ class _SalesReturnDialogV2State extends State<SalesReturnDialogV2> {
 
     // Calculate totals
     final returnItems = <Map<String, dynamic>>[];
-    double subtotal = 0;
+    double subtotalReturn = 0;
+    double discountReturn = 0;
+    double taxReturn = 0;
 
     for (var item in _selectedSale!.items) {
       final returnQty = _returnQuantities[item.product.id] ?? 0;
       if (returnQty > 0) {
-        final itemTotal = item.product.price * returnQty;
-        subtotal += itemTotal;
+        // Calculate proportional values
+        final qtyRatio = returnQty / item.quantity;
+        final itemSubtotal = item.subtotal * qtyRatio;
+        final itemDiscount = item.discountAmount * qtyRatio;
+        final itemTax = item.taxAmount * qtyRatio;
+        final itemTotal = item.total * qtyRatio;
+
+        subtotalReturn += itemSubtotal;
+        discountReturn += itemDiscount;
+        taxReturn += itemTax;
+
         returnItems.add({
           'name': item.product.name,
           'qty': returnQty,
           'price': item.product.price,
+          'subtotal': itemSubtotal,
+          'discount': itemDiscount,
+          'discountPercent': item.discount,
+          'tax': itemTax,
+          'taxPercent': item.taxPercent,
           'total': itemTotal,
         });
       }
@@ -360,6 +384,53 @@ class _SalesReturnDialogV2State extends State<SalesReturnDialogV2> {
                           style: const pw.TextStyle(fontSize: 9),
                         ),
                         pw.Text(
+                          _formatCurrency(item['subtotal']),
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ],
+                    ),
+                    // Show discount if any
+                    if (item['discount'] > 0)
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '  Diskon ${item['discountPercent']}%',
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
+                          pw.Text(
+                            '- ${_formatCurrency(item['discount'])}',
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
+                        ],
+                      ),
+                    // Show tax if any
+                    if (item['tax'] > 0)
+                      pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            '  PPN ${item['taxPercent']}%',
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
+                          pw.Text(
+                            '+ ${_formatCurrency(item['tax'])}',
+                            style: const pw.TextStyle(fontSize: 8),
+                          ),
+                        ],
+                      ),
+                    // Item total
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          '  Total',
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.Text(
                           _formatCurrency(item['total']),
                           style: pw.TextStyle(
                             fontSize: 9,
@@ -376,9 +447,9 @@ class _SalesReturnDialogV2State extends State<SalesReturnDialogV2> {
               pw.Divider(),
 
               // Totals
-              _buildTotalRow('Subtotal', subtotal),
-              _buildTotalRow('Discount', _selectedSale!.discount),
-              _buildTotalRow('Tax', _selectedSale!.tax),
+              _buildTotalRow('Subtotal', subtotalReturn),
+              if (discountReturn > 0) _buildTotalRow('Diskon', -discountReturn),
+              if (taxReturn > 0) _buildTotalRow('Pajak', taxReturn),
               pw.Divider(thickness: 2),
               _buildTotalRow(
                 'TOTAL REFUND',

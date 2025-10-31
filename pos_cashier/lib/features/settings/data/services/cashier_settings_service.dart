@@ -87,6 +87,11 @@ class CashierSettingsService {
             autoPrintReceipt: value as bool,
           );
           break;
+        case 'defaultPrintFormat':
+          updatedSettings = currentSettings.copyWith(
+            defaultPrintFormat: value as String,
+          );
+          break;
         case 'themePreference':
           updatedSettings = currentSettings.copyWith(
             themePreference: value as String,

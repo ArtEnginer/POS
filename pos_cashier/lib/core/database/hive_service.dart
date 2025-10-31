@@ -30,8 +30,6 @@ class HiveService {
     await Future.wait([
       Hive.openBox(AppConstants.productsBox),
       Hive.openBox(AppConstants.salesBox),
-      Hive.openBox(AppConstants.customersBox),
-      Hive.openBox(AppConstants.categoriesBox),
       Hive.openBox(AppConstants.settingsBox),
       Hive.openBox(AppConstants.authBox),
       Hive.openBox(AppConstants.pendingSalesBox),
@@ -40,12 +38,7 @@ class HiveService {
     _isInitialized = true;
 
     final authBox = Hive.box(AppConstants.authBox);
-    print('✅ Hive initialized successfully');
-    print('   Auth box path: ${authBox.path}');
-    print('   Auth box is open: ${authBox.isOpen}');
-    print('   Auth box current length: ${authBox.length}');
 
-    // DEBUG: Show what's already in auth box
     if (authBox.isNotEmpty) {
       print('   📋 Existing keys in auth box: ${authBox.keys.toList()}');
     }
@@ -65,12 +58,6 @@ class HiveService {
   /// Sales box
   Box get salesBox => getBox(AppConstants.salesBox);
 
-  /// Customers box
-  Box get customersBox => getBox(AppConstants.customersBox);
-
-  /// Categories box
-  Box get categoriesBox => getBox(AppConstants.categoriesBox);
-
   /// Settings box
   Box get settingsBox => getBox(AppConstants.settingsBox);
 
@@ -85,8 +72,6 @@ class HiveService {
     await Future.wait([
       productsBox.clear(),
       salesBox.clear(),
-      customersBox.clear(),
-      categoriesBox.clear(),
       settingsBox.clear(),
       pendingSalesBox.clear(),
     ]);
@@ -103,8 +88,6 @@ class HiveService {
     await Future.wait([
       productsBox.clear(),
       salesBox.clear(),
-      customersBox.clear(),
-      categoriesBox.clear(),
       settingsBox.clear(),
       authBox.clear(),
       pendingSalesBox.clear(),
