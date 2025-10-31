@@ -72,10 +72,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
         final data = response.data['data'] as List? ?? [];
         setState(() {
           // Load all units (remove isActive filter for now)
-          _units =
-              data
-                  .map((unit) => unit['name'] as String)
-                  .toList();
+          _units = data.map((unit) => unit['name'] as String).toList();
 
           // Set default unit if not set
           if (_units.isNotEmpty && _selectedUnit.isEmpty) {
@@ -661,162 +658,165 @@ class _ProductFormPageState extends State<ProductFormPage> {
     return Row(
       children: [
         Expanded(
-          child: _units.isEmpty
-              ? TextFormField(
-                  decoration: InputDecoration(
-                    labelText: 'Satuan *',
-                    hintText: 'Loading...',
-                    prefixIcon: const Icon(Icons.straighten),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  enabled: false,
-                )
-              : Autocomplete<String>(
-                  optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return _units;
-                    }
-                    return _units.where((String unit) {
-                      return unit
-                          .toLowerCase()
-                          .contains(textEditingValue.text.toLowerCase());
-                    });
-                  },
-                  onSelected: (String selection) {
-                    setState(() {
-                      _selectedUnit = selection;
-                    });
-                  },
-                  fieldViewBuilder: (
-                    BuildContext context,
-                    TextEditingController textEditingController,
-                    FocusNode focusNode,
-                    VoidCallback onFieldSubmitted,
-                  ) {
-                    // Set initial value only once
-                    if (textEditingController.text.isEmpty && _selectedUnit.isNotEmpty) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        textEditingController.text = _selectedUnit;
-                      });
-                    }
-                    
-                    return TextFormField(
-                      controller: textEditingController,
-                      focusNode: focusNode,
-                      decoration: InputDecoration(
-                        labelText: 'Satuan *',
-                        hintText: 'Ketik atau pilih satuan',
-                        prefixIcon: const Icon(Icons.straighten),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Satuan harus dipilih';
-                        }
-                        if (!_units.contains(value)) {
-                          return 'Satuan tidak valid';
-                        }
-                        return null;
-                      },
-                      onChanged: (value) {
-                        // Update selected unit when typing
-                        if (_units.contains(value)) {
-                          _selectedUnit = value;
-                        }
-                      },
-                    );
-                  },
-                  optionsViewBuilder: (
-                    BuildContext context,
-                    AutocompleteOnSelected<String> onSelected,
-                    Iterable<String> options,
-                  ) {
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 4.0,
+          child:
+              _units.isEmpty
+                  ? TextFormField(
+                    decoration: InputDecoration(
+                      labelText: 'Satuan *',
+                      hintText: 'Loading...',
+                      prefixIcon: const Icon(Icons.straighten),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxHeight: 200,
-                            maxWidth: 300,
-                          ),
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(8.0),
-                            shrinkWrap: true,
-                            itemCount: options.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              final String option = options.elementAt(index);
-                              return InkWell(
-                                onTap: () {
-                                  onSelected(option);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12.0,
-                                    horizontal: 16.0,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        option == _selectedUnit
-                                            ? AppColors.primary.withOpacity(0.1)
-                                            : null,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      if (option == _selectedUnit)
-                                        const Icon(
-                                          Icons.check,
-                                          color: AppColors.primary,
-                                          size: 20,
-                                        ),
-                                      if (option == _selectedUnit)
-                                        const SizedBox(width: 8),
-                                      Text(
-                                        option,
-                                        style: TextStyle(
-                                          fontWeight:
-                                              option == _selectedUnit
-                                                  ? FontWeight.bold
-                                                  : FontWeight.normal,
-                                          color:
-                                              option == _selectedUnit
-                                                  ? AppColors.primary
-                                                  : null,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
+                      ),
+                    ),
+                    enabled: false,
+                  )
+                  : Autocomplete<String>(
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return _units;
+                      }
+                      return _units.where((String unit) {
+                        return unit.toLowerCase().contains(
+                          textEditingValue.text.toLowerCase(),
+                        );
+                      });
+                    },
+                    onSelected: (String selection) {
+                      setState(() {
+                        _selectedUnit = selection;
+                      });
+                    },
+                    fieldViewBuilder: (
+                      BuildContext context,
+                      TextEditingController textEditingController,
+                      FocusNode focusNode,
+                      VoidCallback onFieldSubmitted,
+                    ) {
+                      // Set initial value only once
+                      if (textEditingController.text.isEmpty &&
+                          _selectedUnit.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          textEditingController.text = _selectedUnit;
+                        });
+                      }
+
+                      return TextFormField(
+                        controller: textEditingController,
+                        focusNode: focusNode,
+                        decoration: InputDecoration(
+                          labelText: 'Satuan *',
+                          hintText: 'Ketik atau pilih satuan',
+                          prefixIcon: const Icon(Icons.straighten),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Satuan harus dipilih';
+                          }
+                          if (!_units.contains(value)) {
+                            return 'Satuan tidak valid';
+                          }
+                          return null;
+                        },
+                        onChanged: (value) {
+                          // Update selected unit when typing
+                          if (_units.contains(value)) {
+                            _selectedUnit = value;
+                          }
+                        },
+                      );
+                    },
+                    optionsViewBuilder: (
+                      BuildContext context,
+                      AutocompleteOnSelected<String> onSelected,
+                      Iterable<String> options,
+                    ) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4.0,
+                          borderRadius: BorderRadius.circular(12),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxHeight: 200,
+                              maxWidth: 300,
+                            ),
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(8.0),
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                final String option = options.elementAt(index);
+                                return InkWell(
+                                  onTap: () {
+                                    onSelected(option);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12.0,
+                                      horizontal: 16.0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          option == _selectedUnit
+                                              ? AppColors.primary.withOpacity(
+                                                0.1,
+                                              )
+                                              : null,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (option == _selectedUnit)
+                                          const Icon(
+                                            Icons.check,
+                                            color: AppColors.primary,
+                                            size: 20,
+                                          ),
+                                        if (option == _selectedUnit)
+                                          const SizedBox(width: 8),
+                                        Text(
+                                          option,
+                                          style: TextStyle(
+                                            fontWeight:
+                                                option == _selectedUnit
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                            color:
+                                                option == _selectedUnit
+                                                    ? AppColors.primary
+                                                    : null,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: _isLoadingUnits
-              ? null
-              : () async {
-                  // Open unit management
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const UnitListPage(),
-                    ),
-                  );
-                  // reload units if changed
-                  if (result == true) await _loadUnits();
-                },
+          onPressed:
+              _isLoadingUnits
+                  ? null
+                  : () async {
+                    // Open unit management
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UnitListPage()),
+                    );
+                    // reload units if changed
+                    if (result == true) await _loadUnits();
+                  },
           icon: const Icon(Icons.edit),
           tooltip: 'Kelola Satuan',
           color: AppColors.primary,
@@ -919,187 +919,197 @@ class _ProductFormPageState extends State<ProductFormPage> {
     return Row(
       children: [
         Expanded(
-          child: _categories.isEmpty
-              ? TextFormField(
-                  decoration: InputDecoration(
-                    labelText: 'Kategori',
-                    hintText: 'Loading...',
-                    prefixIcon: const Icon(Icons.category),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  enabled: false,
-                )
-              : Autocomplete<Map<String, String>>(
-                  optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty) {
-                      return _categories;
-                    }
-                    return _categories.where((Map<String, String> category) {
-                      final name = category['name'] ?? '';
-                      return name
-                          .toLowerCase()
-                          .contains(textEditingValue.text.toLowerCase());
-                    });
-                  },
-                  displayStringForOption: (Map<String, String> option) =>
-                      option['name'] ?? '',
-                  onSelected: (Map<String, String> selection) {
-                    setState(() {
-                      _selectedCategoryId = selection['id'];
-                      _selectedCategoryName = selection['name'];
-                    });
-                  },
-                  fieldViewBuilder: (
-                    BuildContext context,
-                    TextEditingController textEditingController,
-                    FocusNode focusNode,
-                    VoidCallback onFieldSubmitted,
-                  ) {
-                    // Set initial value only once
-                    if (textEditingController.text.isEmpty && _selectedCategoryName != null && _selectedCategoryName!.isNotEmpty) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        textEditingController.text = _selectedCategoryName!;
-                      });
-                    }
-
-                    return TextFormField(
-                      controller: textEditingController,
-                      focusNode: focusNode,
-                      decoration: InputDecoration(
-                        labelText: 'Kategori',
-                        hintText: 'Ketik atau pilih kategori (opsional)',
-                        prefixIcon: const Icon(Icons.category),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        suffixIcon: textEditingController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear),
-                                onPressed: () {
-                                  textEditingController.clear();
-                                  setState(() {
-                                    _selectedCategoryId = null;
-                                    _selectedCategoryName = null;
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
-                      onChanged: (value) {
-                        // Clear selection if text doesn't match
-                        if (value.isEmpty) {
-                          _selectedCategoryId = null;
-                          _selectedCategoryName = null;
-                        } else {
-                          // Check if typed value matches any category
-                          final match = _categories.firstWhere(
-                            (cat) => cat['name'] == value,
-                            orElse: () => {},
-                          );
-                          if (match.isNotEmpty) {
-                            _selectedCategoryId = match['id'];
-                            _selectedCategoryName = match['name'];
-                          }
-                        }
-                      },
-                    );
-                  },
-                  optionsViewBuilder: (
-                    BuildContext context,
-                    AutocompleteOnSelected<Map<String, String>> onSelected,
-                    Iterable<Map<String, String>> options,
-                  ) {
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Material(
-                        elevation: 4.0,
+          child:
+              _categories.isEmpty
+                  ? TextFormField(
+                    decoration: InputDecoration(
+                      labelText: 'Kategori',
+                      hintText: 'Loading...',
+                      prefixIcon: const Icon(Icons.category),
+                      border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxHeight: 250,
-                            maxWidth: 350,
-                          ),
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(8.0),
-                            shrinkWrap: true,
-                            itemCount: options.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              final Map<String, String> option =
-                                  options.elementAt(index);
-                              final displayName =
-                                  option['displayName'] ?? option['name'] ?? '-';
-                              final isSelected =
-                                  option['id'] == _selectedCategoryId;
+                      ),
+                    ),
+                    enabled: false,
+                  )
+                  : Autocomplete<Map<String, String>>(
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return _categories;
+                      }
+                      return _categories.where((Map<String, String> category) {
+                        final name = category['name'] ?? '';
+                        return name.toLowerCase().contains(
+                          textEditingValue.text.toLowerCase(),
+                        );
+                      });
+                    },
+                    displayStringForOption:
+                        (Map<String, String> option) => option['name'] ?? '',
+                    onSelected: (Map<String, String> selection) {
+                      setState(() {
+                        _selectedCategoryId = selection['id'];
+                        _selectedCategoryName = selection['name'];
+                      });
+                    },
+                    fieldViewBuilder: (
+                      BuildContext context,
+                      TextEditingController textEditingController,
+                      FocusNode focusNode,
+                      VoidCallback onFieldSubmitted,
+                    ) {
+                      // Set initial value only once
+                      if (textEditingController.text.isEmpty &&
+                          _selectedCategoryName != null &&
+                          _selectedCategoryName!.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          textEditingController.text = _selectedCategoryName!;
+                        });
+                      }
 
-                              return InkWell(
-                                onTap: () {
-                                  onSelected(option);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12.0,
-                                    horizontal: 16.0,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        isSelected
-                                            ? AppColors.primary.withOpacity(0.1)
-                                            : null,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      if (isSelected)
-                                        const Icon(
-                                          Icons.check,
-                                          color: AppColors.primary,
-                                          size: 20,
-                                        ),
-                                      if (isSelected) const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          displayName,
-                                          style: TextStyle(
-                                            fontWeight:
-                                                isSelected
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
-                                            color:
-                                                isSelected
-                                                    ? AppColors.primary
-                                                    : null,
+                      return TextFormField(
+                        controller: textEditingController,
+                        focusNode: focusNode,
+                        decoration: InputDecoration(
+                          labelText: 'Kategori',
+                          hintText: 'Ketik atau pilih kategori (opsional)',
+                          prefixIcon: const Icon(Icons.category),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          suffixIcon:
+                              textEditingController.text.isNotEmpty
+                                  ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      textEditingController.clear();
+                                      setState(() {
+                                        _selectedCategoryId = null;
+                                        _selectedCategoryName = null;
+                                      });
+                                    },
+                                  )
+                                  : null,
+                        ),
+                        onChanged: (value) {
+                          // Clear selection if text doesn't match
+                          if (value.isEmpty) {
+                            _selectedCategoryId = null;
+                            _selectedCategoryName = null;
+                          } else {
+                            // Check if typed value matches any category
+                            final match = _categories.firstWhere(
+                              (cat) => cat['name'] == value,
+                              orElse: () => {},
+                            );
+                            if (match.isNotEmpty) {
+                              _selectedCategoryId = match['id'];
+                              _selectedCategoryName = match['name'];
+                            }
+                          }
+                        },
+                      );
+                    },
+                    optionsViewBuilder: (
+                      BuildContext context,
+                      AutocompleteOnSelected<Map<String, String>> onSelected,
+                      Iterable<Map<String, String>> options,
+                    ) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4.0,
+                          borderRadius: BorderRadius.circular(12),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxHeight: 250,
+                              maxWidth: 350,
+                            ),
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(8.0),
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                final Map<String, String> option = options
+                                    .elementAt(index);
+                                final displayName =
+                                    option['displayName'] ??
+                                    option['name'] ??
+                                    '-';
+                                final isSelected =
+                                    option['id'] == _selectedCategoryId;
+
+                                return InkWell(
+                                  onTap: () {
+                                    onSelected(option);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12.0,
+                                      horizontal: 16.0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          isSelected
+                                              ? AppColors.primary.withOpacity(
+                                                0.1,
+                                              )
+                                              : null,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (isSelected)
+                                          const Icon(
+                                            Icons.check,
+                                            color: AppColors.primary,
+                                            size: 20,
+                                          ),
+                                        if (isSelected)
+                                          const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            displayName,
+                                            style: TextStyle(
+                                              fontWeight:
+                                                  isSelected
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                              color:
+                                                  isSelected
+                                                      ? AppColors.primary
+                                                      : null,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
         ),
         const SizedBox(width: 8),
         IconButton(
-          onPressed: _isLoadingCategories
-              ? null
-              : () async {
-                  // Open category management
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CategoryListPage(),
-                    ),
-                  );
-                  // reload categories if changed
-                  if (result == true) await _loadCategories();
-                },
+          onPressed:
+              _isLoadingCategories
+                  ? null
+                  : () async {
+                    // Open category management
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CategoryListPage(),
+                      ),
+                    );
+                    // reload categories if changed
+                    if (result == true) await _loadCategories();
+                  },
           icon: const Icon(Icons.edit),
           tooltip: 'Kelola Kategori',
           color: AppColors.primary,
