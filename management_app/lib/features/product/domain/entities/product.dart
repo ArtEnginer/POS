@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'branch_stock.dart';
+import 'product_unit.dart';
+import 'product_branch_price.dart';
 
 class Product extends Equatable {
   final String id;
@@ -29,6 +31,10 @@ class Product extends Equatable {
   final DateTime? deletedAt;
   final List<BranchStock>? branchStocks; // Stock per branch (from backend)
 
+  // Multi-unit & Pricing
+  final List<ProductUnit>? units; // Available units for this product
+  final List<ProductBranchPrice>? prices; // Prices per branch per unit
+
   const Product({
     required this.id,
     this.branchId,
@@ -56,6 +62,8 @@ class Product extends Equatable {
     required this.updatedAt,
     this.deletedAt,
     this.branchStocks,
+    this.units,
+    this.prices,
   });
 
   // Computed properties
@@ -74,6 +82,27 @@ class Product extends Equatable {
   int get totalBranches => branchStocks?.length ?? 0;
   int get branchesWithStock =>
       branchStocks?.where((s) => s.hasStock).length ?? 0;
+
+  // Multi-unit helpers
+  bool get hasMultipleUnits => units != null && units!.length > 1;
+  int get totalUnits => units?.length ?? 0;
+  ProductUnit? get baseUnit =>
+      units?.firstWhere((u) => u.isBaseUnit, orElse: () => units!.first);
+
+  // Pricing helpers
+  int get totalPrices => prices?.length ?? 0;
+  bool get hasBranchSpecificPricing => prices != null && prices!.isNotEmpty;
+
+  // Get price for specific branch and unit
+  ProductBranchPrice? getPriceFor({required String branchId, String? unitId}) {
+    if (prices == null) return null;
+    return prices!.firstWhere(
+      (p) =>
+          p.branchId == branchId &&
+          (unitId == null || p.productUnitId == unitId),
+      orElse: () => prices!.first,
+    );
+  }
 
   // Backward compatibility getters (TEMPORARY - will be removed after UI update)
   @Deprecated('Use sku instead')
@@ -109,6 +138,8 @@ class Product extends Equatable {
     DateTime? updatedAt,
     DateTime? deletedAt,
     List<BranchStock>? branchStocks,
+    List<ProductUnit>? units,
+    List<ProductBranchPrice>? prices,
   }) {
     return Product(
       id: id ?? this.id,
@@ -137,6 +168,8 @@ class Product extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       branchStocks: branchStocks ?? this.branchStocks,
+      units: units ?? this.units,
+      prices: prices ?? this.prices,
     );
   }
 
@@ -168,5 +201,7 @@ class Product extends Equatable {
     updatedAt,
     deletedAt,
     branchStocks,
+    units,
+    prices,
   ];
 }

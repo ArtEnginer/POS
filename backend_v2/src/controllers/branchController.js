@@ -5,13 +5,28 @@ export const getAllBranches = async (req, res) => {
   try {
     const { limit = 1000, offset = 0 } = req.query;
 
-    const result = await pool.query(
-      `SELECT * FROM branches 
-       WHERE deleted_at IS NULL 
-       ORDER BY created_at DESC 
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
+    let query = `SELECT * FROM branches WHERE deleted_at IS NULL`;
+    const params = [];
+    let paramIndex = 1;
+
+    // Auto-filter by user's branches if not super_admin
+    if (req.user && req.user.role !== "super_admin") {
+      query = `
+        SELECT b.* FROM branches b
+        INNER JOIN user_branches ub ON b.id = ub.branch_id
+        WHERE b.deleted_at IS NULL 
+        AND ub.user_id = $${paramIndex}
+      `;
+      params.push(req.user.id);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${
+      paramIndex + 1
+    }`;
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
 
     res.json({
       success: true,

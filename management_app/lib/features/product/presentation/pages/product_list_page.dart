@@ -4,8 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../injection_container.dart';
 import '../../domain/entities/product.dart';
+import '../../data/models/product_model.dart';
 import '../bloc/product_bloc.dart';
 import '../bloc/product_event.dart' as event;
 import '../bloc/product_state.dart';
@@ -471,11 +473,84 @@ class _ProductListPageOptimizedState extends State<ProductListPageOptimized> {
                                 ),
                               ),
                               DataCell(
-                                Text(
-                                  product.categoryName ?? '-',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    fontSize: 13,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      product.categoryName ?? '-',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    // Multi-unit indicator
+                                    if (product.units != null &&
+                                        product.units!.length > 1) ...[
+                                      const SizedBox(width: 6),
+                                      Tooltip(
+                                        message:
+                                            'Multi-Unit (${product.units!.length} units)',
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.info,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.layers,
+                                                size: 10,
+                                                color: AppColors.textWhite,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '${product.units!.length}',
+                                                style: AppTextStyles.bodySmall
+                                                    .copyWith(
+                                                      color:
+                                                          AppColors.textWhite,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    // Branch-specific pricing indicator
+                                    if (product.prices != null &&
+                                        product.prices!.isNotEmpty) ...[
+                                      const SizedBox(width: 6),
+                                      Tooltip(
+                                        message: 'Harga Per Cabang',
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.success,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.store,
+                                            size: 10,
+                                            color: AppColors.textWhite,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                               DataCell(
@@ -786,10 +861,69 @@ class _ProductListPageOptimizedState extends State<ProductListPageOptimized> {
   }
 
   void _navigateToForm(BuildContext context, Product? product) async {
+    Product? productToEdit = product;
+
+    // If editing existing product, load complete data first
+    if (product != null) {
+      try {
+        // Show loading
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder:
+                (context) => const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Load complete product data (with units and prices)
+        final apiClient = sl<ApiClient>();
+        final response = await apiClient.get(
+          '/products/${product.id}/complete',
+        );
+
+        // Close loading dialog
+        if (mounted) Navigator.pop(context);
+
+        if (response.statusCode == 200) {
+          // Parse complete product data using ProductModel
+          productToEdit = ProductModel.fromJson(response.data['data']);
+        } else {
+          // If failed to load, show error and return
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Gagal memuat data produk lengkap'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      } catch (e) {
+        // Close loading dialog if still open
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+
+        // Show error
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // Navigate to form with complete product data
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProductFormPage(product: product),
+        builder: (context) => ProductFormPage(product: productToEdit),
       ),
     );
 

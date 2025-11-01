@@ -53,13 +53,13 @@ class DashboardController {
         branchId
           ? `SELECT 
               COUNT(*) as total_purchases,
-              COALESCE(SUM(CASE WHEN status IN ('draft', 'ordered', 'approved') THEN 1 ELSE 0 END), 0) as pending_purchases,
+              COALESCE(SUM(CASE WHEN status IN ('pending', 'ordered') THEN 1 ELSE 0 END), 0) as pending_purchases,
               COALESCE(SUM(total_amount), 0) as total_purchase_amount
             FROM purchases 
             WHERE branch_id = $1 AND deleted_at IS NULL`
           : `SELECT 
               COUNT(*) as total_purchases,
-              COALESCE(SUM(CASE WHEN status IN ('draft', 'ordered', 'approved') THEN 1 ELSE 0 END), 0) as pending_purchases,
+              COALESCE(SUM(CASE WHEN status IN ('pending', 'ordered') THEN 1 ELSE 0 END), 0) as pending_purchases,
               COALESCE(SUM(total_amount), 0) as total_purchase_amount
             FROM purchases 
             WHERE deleted_at IS NULL`,

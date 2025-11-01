@@ -6,9 +6,11 @@ Enterprise-grade backend untuk sistem POS multi-cabang dengan PostgreSQL, Redis,
 
 ## 🎯 Features
 
-- ✅ **RESTful API** - 40+ endpoints
+- ✅ **RESTful API** - 50+ endpoints
 - ✅ **Real-time Sync** - Socket.IO untuk live updates
 - ✅ **Multi-Branch** - Support unlimited branches
+- ✅ **Multi-Unit System** - Multiple units per product with auto conversion
+- ✅ **Branch-Specific Pricing** - Different prices per branch per unit
 - ✅ **JWT Authentication** - Secure token-based auth
 - ✅ **Redis Caching** - High performance caching
 - ✅ **Connection Pooling** - Optimized database connections
@@ -35,15 +37,41 @@ Enterprise-grade backend untuk sistem POS multi-cabang dengan PostgreSQL, Redis,
 npm install
 ```
 
-### 2. Setup Database
+### 2. Setup Environment
 ```bash
-# Automated setup (recommended)
-npm run setup
-
-# Manual setup
+# Copy environment template
 cp .env.example .env
-# Edit .env with your configuration
-psql -U postgres -d pos_enterprise -f src/database/schema.sql
+
+# Edit .env with your database configuration
+# DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, etc.
+```
+
+### 3. Setup Database
+```bash
+# Automated setup with COMPLETE_SCHEME_V4.sql (RECOMMENDED)
+node setup_database_complete.js
+
+# This will:
+# - Drop existing database (if exists)
+# - Create new database
+# - Create all tables with proper relationships
+# - Setup triggers and views
+# - Insert default data (admin user, HQ branch, common units)
+```
+
+### 4. (Optional) Seed Sample Data
+```bash
+# Insert sample data for testing
+node seed_database.js
+
+# This will add:
+# - 4 branches (HQ, Jakarta, Bandung, Surabaya)
+# - 5 test users (admin, manager, cashier1, cashier2, staff1)
+# - 8 product categories
+# - 3 suppliers
+# - 5 customers
+# - 20 sample products
+# - 80 stock records (20 products × 4 branches)
 ```
 
 ### 3. Start Server
@@ -62,6 +90,14 @@ npm run cluster
 ```bash
 curl http://localhost:3001/api/v2/health
 ```
+
+### 5. Login (Default Credentials)
+```
+Username: admin
+Password: admin123
+```
+
+**⚠️ IMPORTANT: Change default admin password immediately in production!**
 
 ---
 
@@ -150,6 +186,18 @@ JWT_REFRESH_EXPIRATION=7d
 - `POST /api/v2/products` - Create product
 - `PUT /api/v2/products/:id` - Update product
 - `DELETE /api/v2/products/:id` - Delete product
+
+### Product Units (Multi-Unit System)
+- `GET /api/v2/products/:id/units` - Get all units for product
+- `POST /api/v2/products/:id/units` - Add unit to product
+- `PUT /api/v2/products/:id/units/:unitId` - Update unit conversion
+- `DELETE /api/v2/products/:id/units/:unitId` - Remove unit from product
+
+### Product Pricing (Branch-Specific)
+- `GET /api/v2/products/:id/prices` - Get all prices for product
+- `PUT /api/v2/products/:id/prices` - Update prices (bulk update)
+- `GET /api/v2/products/:id/prices/:branchId/:unitId` - Get specific price
+- `DELETE /api/v2/products/:id/prices/:branchId/:unitId` - Delete specific price
 
 ### Sales
 - `GET /api/v2/sales` - Get all sales
@@ -276,19 +324,66 @@ redis-cli INFO stats
 
 ## 🗄️ Database
 
-### Tables (15+)
+### Complete Schema Installation
+
+The database schema is consolidated in a single file for easy installation:
+- **File**: `src/database/migrations/COMPLETE_SCHEME_V4.sql`
+- **Installation**: `node setup_database_complete.js`
+
+### Features
+- ✅ **Multi-Unit System** - Support multiple units per product (PCS, BOX, DUS, etc.)
+- ✅ **Unit Conversion** - Automatic conversion between units (1 BOX = 10 PCS)
+- ✅ **Branch-Specific Pricing** - Different prices per branch per unit
+- ✅ **Stock Management** - Real-time stock tracking per branch
+- ✅ **Audit Trails** - Complete transaction history
+- ✅ **Triggers** - Auto-update timestamps and stock
+
+### Tables (20+)
 - `branches` - Branch information
-- `users` - User accounts
-- `products` - Product master
+- `users` - User accounts with roles
+- `user_branches` - User-branch assignments
+- `categories` - Product categories
+- `units` - Unit of measurements (PCS, KG, BOX, etc.)
+- `products` - Product master data
+- `product_units` - Multi-unit conversions per product
+- `product_branch_prices` - Pricing per branch per unit
 - `product_stocks` - Stock per branch
 - `customers` - Customer data
 - `suppliers` - Supplier data
 - `sales` - Sales transactions
 - `sale_items` - Sales line items
+- `sales_returns` - Return transactions
+- `return_items` - Return line items
 - `purchases` - Purchase orders
 - `purchase_items` - Purchase line items
+- `receivings` - Receiving transactions
+- `receiving_items` - Receiving line items
+- `purchase_returns` - Purchase return transactions
+- `purchase_return_items` - Purchase return line items
+- `stock_adjustments` - Stock adjustment logs
+- `cashier_settings` - Cashier configurations
 - `sync_logs` - Sync tracking
 - `audit_logs` - Audit trail
+
+### Views
+- `v_product_units_prices` - Comprehensive view joining products, units, pricing, and stock
+
+### Default Data
+- Admin user (username: `admin`, password: `admin123`)
+- Head Office branch
+- 10 common units (PCS, KG, GRAM, LITER, ML, BOX, PACK, DUS, LUSIN, METER)
+
+### Multi-Unit Example
+```sql
+-- Product "Coca Cola"
+-- Base unit: PCS
+-- 1 BOX = 24 PCS
+-- 1 DUS = 12 BOX = 288 PCS
+
+-- Different prices per branch:
+-- HQ Branch: PCS=5000, BOX=110000, DUS=1250000
+-- Cabang A: PCS=5500, BOX=120000, DUS=1350000
+```
 
 ### Backup
 ```bash
@@ -370,9 +465,12 @@ lsof -ti:3001 | xargs kill -9
 - ✅ Redis caching
 - ✅ Socket.IO real-time
 - ✅ Multi-branch support
+- ✅ **Multi-unit system with auto conversion**
+- ✅ **Branch-specific pricing per unit**
 - ✅ JWT authentication
 - ✅ Cluster mode
 - ✅ Comprehensive logging
+- ✅ **Single-file database installation**
 
 ### Roadmap
 - [ ] GraphQL API

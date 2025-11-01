@@ -1,6 +1,10 @@
 import 'dart:convert';
 import '../../domain/entities/product.dart';
 import '../../domain/entities/branch_stock.dart';
+import '../../domain/entities/product_unit.dart';
+import '../../domain/entities/product_branch_price.dart';
+import 'product_unit_model.dart';
+import 'product_branch_price_model.dart';
 
 class ProductModel extends Product {
   const ProductModel({
@@ -30,6 +34,8 @@ class ProductModel extends Product {
     required super.updatedAt,
     super.deletedAt,
     super.branchStocks,
+    super.units,
+    super.prices,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
@@ -43,6 +49,40 @@ class ProductModel extends Product {
                 .map(
                   (stock) =>
                       BranchStock.fromJson(stock as Map<String, dynamic>),
+                )
+                .toList();
+      }
+    }
+
+    // Parse product units if available
+    List<ProductUnit>? units;
+    if (json['units'] != null) {
+      final unitsData = json['units'];
+      if (unitsData is List) {
+        units =
+            unitsData
+                .map(
+                  (unit) =>
+                      ProductUnitModel.fromJson(
+                        unit as Map<String, dynamic>,
+                      ).toEntity(),
+                )
+                .toList();
+      }
+    }
+
+    // Parse product prices if available
+    List<ProductBranchPrice>? prices;
+    if (json['prices'] != null) {
+      final pricesData = json['prices'];
+      if (pricesData is List) {
+        prices =
+            pricesData
+                .map(
+                  (price) =>
+                      ProductBranchPriceModel.fromJson(
+                        price as Map<String, dynamic>,
+                      ).toEntity(),
                 )
                 .toList();
       }
@@ -89,6 +129,8 @@ class ProductModel extends Product {
               ? DateTime.parse(json['deleted_at'] as String)
               : null,
       branchStocks: branchStocks, // Include branch stocks
+      units: units, // Include product units
+      prices: prices, // Include product prices
     );
   }
 
@@ -178,6 +220,8 @@ class ProductModel extends Product {
       updatedAt: product.updatedAt,
       deletedAt: product.deletedAt,
       branchStocks: product.branchStocks,
+      units: product.units,
+      prices: product.prices,
     );
   }
 

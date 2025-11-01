@@ -280,6 +280,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                // Units Card (Multi-Unit Support)
+                if (product.units != null && product.units!.isNotEmpty)
+                  _buildUnitsCard(product),
+                if (product.units != null && product.units!.isNotEmpty)
+                  const SizedBox(height: 16),
+                // Pricing Card (Branch-Specific Pricing)
+                if (product.prices != null && product.prices!.isNotEmpty)
+                  _buildPricingCard(product),
+                if (product.prices != null && product.prices!.isNotEmpty)
+                  const SizedBox(height: 16),
                 // Additional Info Card
                 if (product.description != null &&
                     product.description!.isNotEmpty)
@@ -455,6 +465,331 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     }
 
     return Tooltip(message: label, child: Icon(icon, size: 24, color: color));
+  }
+
+  Widget _buildUnitsCard(Product product) {
+    final units = product.units!;
+    final baseUnit = units.firstWhere(
+      (u) => u.isBaseUnit,
+      orElse: () => units.first,
+    );
+
+    return _buildInfoCard(
+      title: 'Satuan Produk (${units.length} Unit)',
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.textSecondary.withOpacity(0.2)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Table(
+            columnWidths: const {
+              0: FlexColumnWidth(2),
+              1: FlexColumnWidth(1.5),
+              2: FlexColumnWidth(1),
+            },
+            children: [
+              // Header
+              TableRow(
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(8),
+                    topRight: Radius.circular(8),
+                  ),
+                ),
+                children: [
+                  _buildTableHeader('Satuan'),
+                  _buildTableHeader('Konversi', center: true),
+                  _buildTableHeader('Status', center: true),
+                ],
+              ),
+              // Rows
+              ...units.map((unit) {
+                final isBase = unit.isBaseUnit;
+                return TableRow(
+                  decoration: BoxDecoration(
+                    color:
+                        isBase
+                            ? AppColors.success.withOpacity(0.05)
+                            : Colors.transparent,
+                  ),
+                  children: [
+                    _buildTableCell(
+                      unit.unitName,
+                      bold: isBase,
+                      color: isBase ? AppColors.success : null,
+                    ),
+                    _buildTableCell(
+                      isBase
+                          ? '1 (Base)'
+                          : '1 = ${unit.conversionValue.toInt()} ${baseUnit.unitName}',
+                      center: true,
+                    ),
+                    _buildTableCell(
+                      _getUnitStatusBadge(unit),
+                      center: true,
+                      widget: true,
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.info.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, color: AppColors.info, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Unit dasar: ${baseUnit.unitName}. Semua stok dihitung dalam ${baseUnit.unitName}.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.info,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPricingCard(Product product) {
+    final prices = product.prices!;
+    final currencyFormat = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    );
+
+    // Group prices by branch
+    final Map<String, List<dynamic>> pricesByBranch = {};
+    for (var price in prices) {
+      final branchKey = price.branchName ?? price.branchCode ?? 'Unknown';
+      if (!pricesByBranch.containsKey(branchKey)) {
+        pricesByBranch[branchKey] = [];
+      }
+      pricesByBranch[branchKey]!.add(price);
+    }
+
+    return _buildInfoCard(
+      title: 'Harga Per Cabang (${pricesByBranch.length} Cabang)',
+      children: [
+        ...pricesByBranch.entries.map((entry) {
+          final branchName = entry.key;
+          final branchPrices = entry.value;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: AppColors.textSecondary.withOpacity(0.2),
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Branch header
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(8),
+                      topRight: Radius.circular(8),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.store,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        branchName,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Price table
+                Table(
+                  columnWidths: const {
+                    0: FlexColumnWidth(1.5),
+                    1: FlexColumnWidth(2),
+                    2: FlexColumnWidth(2),
+                    3: FlexColumnWidth(1.5),
+                  },
+                  children: [
+                    // Header
+                    TableRow(
+                      decoration: BoxDecoration(color: AppColors.background),
+                      children: [
+                        _buildTableHeader('Unit', fontSize: 12),
+                        _buildTableHeader('Beli', fontSize: 12),
+                        _buildTableHeader('Jual', fontSize: 12),
+                        _buildTableHeader('Margin', fontSize: 12, center: true),
+                      ],
+                    ),
+                    // Rows
+                    ...branchPrices.map((price) {
+                      return TableRow(
+                        children: [
+                          _buildTableCell(
+                            price.unitName ?? 'Base',
+                            fontSize: 12,
+                          ),
+                          _buildTableCell(
+                            currencyFormat.format(price.costPrice),
+                            fontSize: 12,
+                          ),
+                          _buildTableCell(
+                            currencyFormat.format(price.sellingPrice),
+                            fontSize: 12,
+                            color: AppColors.success,
+                          ),
+                          _buildTableCell(
+                            '${price.marginPercentage.toStringAsFixed(1)}%',
+                            fontSize: 12,
+                            center: true,
+                            color:
+                                price.marginPercentage > 0
+                                    ? AppColors.success
+                                    : AppColors.error,
+                            bold: true,
+                          ),
+                        ],
+                      );
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }),
+        if (pricesByBranch.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Belum ada harga untuk produk ini',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTableHeader(
+    String text, {
+    bool center = false,
+    double fontSize = 13,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: fontSize,
+          color: AppColors.textPrimary,
+        ),
+        textAlign: center ? TextAlign.center : TextAlign.left,
+      ),
+    );
+  }
+
+  Widget _buildTableCell(
+    dynamic content, {
+    bool center = false,
+    bool bold = false,
+    Color? color,
+    double fontSize = 13,
+    bool widget = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child:
+          widget
+              ? content
+              : Text(
+                content.toString(),
+                style: TextStyle(
+                  fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+                  fontSize: fontSize,
+                  color: color ?? AppColors.textPrimary,
+                ),
+                textAlign: center ? TextAlign.center : TextAlign.left,
+              ),
+    );
+  }
+
+  Widget _getUnitStatusBadge(dynamic unit) {
+    final badges = <Widget>[];
+
+    if (unit.isBaseUnit) {
+      badges.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.success,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            'BASE',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textWhite,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!unit.isSellable && !unit.isPurchasable) {
+      badges.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: AppColors.textSecondary,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            'INACTIVE',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textWhite,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (badges.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Wrap(spacing: 4, runSpacing: 4, children: badges);
   }
 
   Widget _buildErrorState(BuildContext context, String message) {

@@ -111,7 +111,8 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
   @override
   Future<ProductModel> getProductById(String id) async {
     try {
-      final response = await apiClient.get('/products/$id');
+      // Use /complete endpoint to get units and prices
+      final response = await apiClient.get('/products/$id/complete');
 
       if (response.statusCode == 200) {
         return ProductModel.fromJson(response.data['data']);

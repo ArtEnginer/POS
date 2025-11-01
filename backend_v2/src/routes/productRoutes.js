@@ -3,6 +3,7 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { authenticateToken, authorize } from "../middleware/auth.js";
 import { upload } from "../middleware/upload.js";
 import * as productController from "../controllers/productController.js";
+import * as productUnitController from "../controllers/productUnitController.js";
 
 const router = express.Router();
 
@@ -154,6 +155,103 @@ router.put(
   authenticateToken,
   authorize("super_admin", "admin", "manager"),
   asyncHandler(productController.updateProductStock)
+);
+
+// ============================================
+// PRODUCT UNITS & PRICING ROUTES
+// ============================================
+
+/**
+ * @route   GET /api/v2/products/:productId/complete
+ * @desc    Get product with all units and prices
+ * @access  Private
+ */
+router.get(
+  "/:productId/complete",
+  authenticateToken,
+  asyncHandler(productUnitController.getProductComplete)
+);
+
+/**
+ * @route   GET /api/v2/products/:productId/units
+ * @desc    Get all units for a product
+ * @access  Private
+ */
+router.get(
+  "/:productId/units",
+  authenticateToken,
+  asyncHandler(productUnitController.getProductUnits)
+);
+
+/**
+ * @route   POST /api/v2/products/:productId/units
+ * @desc    Create product unit
+ * @access  Private (Admin, Manager)
+ */
+router.post(
+  "/:productId/units",
+  authenticateToken,
+  authorize("super_admin", "admin", "manager"),
+  asyncHandler(productUnitController.createProductUnit)
+);
+
+/**
+ * @route   PUT /api/v2/products/:productId/units/:unitId
+ * @desc    Update product unit
+ * @access  Private (Admin, Manager)
+ */
+router.put(
+  "/:productId/units/:unitId",
+  authenticateToken,
+  authorize("super_admin", "admin", "manager"),
+  asyncHandler(productUnitController.updateProductUnit)
+);
+
+/**
+ * @route   DELETE /api/v2/products/:productId/units/:unitId
+ * @desc    Delete product unit
+ * @access  Private (Admin)
+ */
+router.delete(
+  "/:productId/units/:unitId",
+  authenticateToken,
+  authorize("super_admin", "admin"),
+  asyncHandler(productUnitController.deleteProductUnit)
+);
+
+/**
+ * @route   GET /api/v2/products/:productId/prices
+ * @desc    Get product prices per branch
+ * @access  Private
+ */
+router.get(
+  "/:productId/prices",
+  authenticateToken,
+  asyncHandler(productUnitController.getProductPrices)
+);
+
+/**
+ * @route   PUT /api/v2/products/:productId/prices
+ * @desc    Update product price for specific branch and unit
+ * @access  Private (Admin, Manager)
+ */
+router.put(
+  "/:productId/prices",
+  authenticateToken,
+  authorize("super_admin", "admin", "manager"),
+  asyncHandler(productUnitController.updateProductPrice)
+);
+
+/**
+ * @route   PUT /api/v2/products/:productId/prices/bulk
+ * @desc    Bulk update prices across all branches
+ * @access  Private (Admin, Manager)
+ */
+router.put(
+  "/:productId/prices/bulk",
+  authenticateToken,
+  authorize("super_admin", "admin", "manager"),
+  asyncHandler(productUnitController.bulkUpdatePrices)
 );
 
 export default router;

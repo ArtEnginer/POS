@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
 import '../../../../injection_container.dart';
@@ -12,7 +11,8 @@ import '../bloc/product_bloc.dart';
 import '../bloc/product_event.dart' as event;
 import '../bloc/product_state.dart';
 import 'category_list_page.dart';
-import '../../../unit/presentation/pages/unit_list_page.dart';
+import '../widgets/product_units_form_tab.dart';
+import '../widgets/product_pricing_form_tab.dart';
 
 class ProductFormPage extends StatefulWidget {
   final Product? product;
@@ -23,7 +23,8 @@ class ProductFormPage extends StatefulWidget {
   State<ProductFormPage> createState() => _ProductFormPageState();
 }
 
-class _ProductFormPageState extends State<ProductFormPage> {
+class _ProductFormPageState extends State<ProductFormPage>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _barcodeController = TextEditingController();
   final _skuController = TextEditingController();
@@ -39,22 +40,25 @@ class _ProductFormPageState extends State<ProductFormPage> {
   final _discountController = TextEditingController();
 
   late final ProductBloc _productBloc;
-  String _selectedUnit = 'PCS';
-  List<String> _units = []; // Will be loaded from API
+  late TabController _tabController;
+
   List<Map<String, String>> _categories = [];
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isActive = true;
   bool _isLoading = false;
   bool _isLoadingCategories = false;
-  bool _isLoadingUnits = false;
+
+  // Multi-unit and pricing data
+  List<Map<String, dynamic>> _productUnits = [];
+  List<Map<String, dynamic>> _productPrices = [];
 
   @override
   void initState() {
     super.initState();
     _productBloc = sl<ProductBloc>();
+    _tabController = TabController(length: 3, vsync: this);
     _loadCategories();
-    _loadUnits(); // Load units from API
     if (widget.product != null) {
       _initializeFormWithProduct(widget.product!);
     } else {
@@ -63,52 +67,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     }
   }
 
-  Future<void> _loadUnits() async {
-    try {
-      setState(() => _isLoadingUnits = true);
-      final apiClient = sl<ApiClient>();
-      final response = await apiClient.get('/units');
-      if (response.statusCode == 200) {
-        final data = response.data['data'] as List? ?? [];
-        setState(() {
-          // Load all units (remove isActive filter for now)
-          _units = data.map((unit) => unit['name'] as String).toList();
-
-          // Set default unit if not set
-          if (_units.isNotEmpty && _selectedUnit.isEmpty) {
-            _selectedUnit = _units.first;
-          }
-
-          // If editing product, validate that the unit exists
-          if (widget.product != null &&
-              !_units.contains(widget.product!.unit)) {
-            // Add the product's unit if it doesn't exist in the list
-            if (widget.product!.unit.isNotEmpty) {
-              _units.add(widget.product!.unit);
-            }
-          }
-        });
-      }
-    } catch (e) {
-      // If API fails, use default units as fallback
-      setState(() {
-        _units = [
-          'PCS',
-          'KG',
-          'GRAM',
-          'LITER',
-          'ML',
-          'BOX',
-          'PACK',
-          'DUS',
-          'LUSIN',
-          'METER',
-        ];
-      });
-    } finally {
-      setState(() => _isLoadingUnits = false);
-    }
-  }
+  // Note: _loadUnits() removed - units managed in Units tab
 
   Future<void> _loadCategories() async {
     try {
@@ -185,6 +144,11 @@ class _ProductFormPageState extends State<ProductFormPage> {
   }
 
   void _initializeFormWithProduct(Product product) {
+    print('ProductFormPage: _initializeFormWithProduct called');
+    print('Product ID: ${product.id}');
+    print('Product units: ${product.units?.length ?? 0}');
+    print('Product prices: ${product.prices?.length ?? 0}');
+
     _barcodeController.text = product.barcode;
     _skuController.text = product.sku;
     _nameController.text = product.name;
@@ -197,13 +161,59 @@ class _ProductFormPageState extends State<ProductFormPage> {
     _reorderPointController.text = product.reorderPoint.toString();
     _taxRateController.text = product.taxRate.toString();
     _discountController.text = product.discountPercentage.toString();
-    _selectedUnit = product.unit;
+    // Note: _selectedUnit removed - unit managed in Units tab
     _isActive = product.isActive;
+
+    // Initialize units from product data
+    if (product.units != null && product.units!.isNotEmpty) {
+      _productUnits =
+          product.units!.map((unit) {
+            print('Mapping unit: ${unit.unitName}');
+            return {
+              'id': unit.id,
+              'unitName': unit.unitName,
+              'conversionValue': unit.conversionValue,
+              'isBaseUnit': unit.isBaseUnit,
+              'canPurchase': unit.isPurchasable,
+              'canSell': unit.isSellable,
+              'barcode': unit.barcode,
+              'sortOrder': unit.sortOrder,
+            };
+          }).toList();
+      print('_productUnits initialized with ${_productUnits.length} units');
+    }
+
+    // Initialize prices from product data
+    if (product.prices != null && product.prices!.isNotEmpty) {
+      _productPrices =
+          product.prices!.map((price) {
+            print(
+              'Mapping price: ${price.unitName} - Cost: ${price.costPrice}, Sell: ${price.sellingPrice}',
+            );
+            return {
+              'id': price.id,
+              'branchId': price.branchId,
+              'branchName': price.branchName ?? '',
+              'productUnitId': price.productUnitId,
+              'unitName': price.unitName ?? 'BASE',
+              'costPrice': price.costPrice,
+              'sellingPrice': price.sellingPrice,
+              'wholesalePrice': price.wholesalePrice,
+              'memberPrice': price.memberPrice,
+              'marginPercentage': price.marginPercentage,
+              'validFrom': price.validFrom,
+              'validUntil': price.validUntil,
+              'isActive': price.isActive,
+            };
+          }).toList();
+      print('_productPrices initialized with ${_productPrices.length} prices');
+    }
   }
 
   @override
   void dispose() {
     _productBloc.close();
+    _tabController.dispose();
     _barcodeController.dispose();
     _skuController.dispose();
     _nameController.dispose();
@@ -231,6 +241,17 @@ class _ProductFormPageState extends State<ProductFormPage> {
           title: Text(isEdit ? 'Edit Produk' : 'Tambah Produk'),
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.textWhite,
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            tabs: const [
+              Tab(icon: Icon(Icons.info), text: 'Informasi'),
+              Tab(icon: Icon(Icons.inventory_2), text: 'Units'),
+              Tab(icon: Icon(Icons.attach_money), text: 'Pricing'),
+            ],
+          ),
           actions: [
             // Status koneksi online/offline
             Padding(
@@ -260,19 +281,29 @@ class _ProductFormPageState extends State<ProductFormPage> {
             }
 
             if (state is ProductOperationSuccess) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Row(
-                    children: [
-                      const Icon(Icons.check_circle, color: Colors.white),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text(state.message)),
-                    ],
+              // Save units and prices after product is created
+              if (widget.product == null && // Only for new products
+                  (_productUnits.isNotEmpty || _productPrices.isNotEmpty)) {
+                // Get product ID from success state
+                // Note: ProductOperationSuccess should contain the created product
+                // For now, we'll extract ID from response if available
+                _saveUnitsAndPricesAfterCreate(state);
+              } else {
+                // Show success and navigate back
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.white),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(state.message)),
+                      ],
+                    ),
+                    backgroundColor: AppColors.success,
                   ),
-                  backgroundColor: AppColors.success,
-                ),
-              );
-              Navigator.pop(context, true);
+                );
+                Navigator.pop(context, true);
+              }
             }
 
             if (state is ProductError) {
@@ -297,113 +328,245 @@ class _ProductFormPageState extends State<ProductFormPage> {
             }
           },
           builder: (context, state) {
-            return Stack(
+            return TabBarView(
+              controller: _tabController,
               children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Basic Info Section
-                        _buildSectionHeader('Informasi Dasar'),
-                        const SizedBox(height: 16),
-                        _buildBarcodeField(),
-                        const SizedBox(height: 16),
-                        _buildNameField(),
-                        const SizedBox(height: 16),
-                        _buildCategoryDropdown(),
-                        const SizedBox(height: 16),
-                        _buildDescriptionField(),
-                        const SizedBox(height: 24),
+                // Tab 1: Basic Info
+                _buildBasicInfoTab(isEdit),
 
-                        // Pricing Section
-                        _buildSectionHeader('Harga'),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(child: _buildcostPriceField()),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildSellingPriceField()),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildProfitInfo(),
-                        const SizedBox(height: 24),
-
-                        // Stock Section
-                        _buildSectionHeader('Stok'),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(flex: 2, child: _buildStockField()),
-                            const SizedBox(width: 16),
-                            Expanded(flex: 2, child: _buildMinStockField()),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        _buildUnitDropdown(),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(child: _buildMaxStockField()),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildReorderPointField()),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Additional Info Section
-                        _buildSectionHeader('Informasi Tambahan'),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(child: _buildTaxRateField()),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildDiscountField()),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Status Section
-                        _buildSectionHeader('Status'),
-                        const SizedBox(height: 16),
-                        _buildActiveSwitch(),
-                        const SizedBox(height: 32),
-
-                        // Submit Button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _submitForm,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: AppColors.textWhite,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: Text(
-                              isEdit ? 'Update Produk' : 'Simpan Produk',
-                              style: AppTextStyles.buttonLarge,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-                  ),
+                // Tab 2: Units Management
+                ProductUnitsFormTab(
+                  productId: widget.product?.id,
+                  initialUnits: widget.product?.units,
+                  onUnitsChanged: (units) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() => _productUnits = units);
+                      }
+                    });
+                  },
                 ),
-                if (_isLoading)
-                  Container(
-                    color: Colors.black.withOpacity(0.3),
-                    child: const Center(child: CircularProgressIndicator()),
-                  ),
+
+                // Tab 3: Pricing Management
+                ProductPricingFormTab(
+                  productId: widget.product?.id,
+                  initialPrices: widget.product?.prices,
+                  units: _productUnits,
+                  onPricesChanged: (prices) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() => _productPrices = prices);
+                      }
+                    });
+                  },
+                ),
               ],
             );
           },
+        ),
+        bottomNavigationBar: _buildBottomBar(isEdit),
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoTab(bool isEdit) {
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Basic Info Section
+                _buildSectionHeader('Informasi Dasar'),
+                const SizedBox(height: 16),
+                _buildBarcodeField(),
+                const SizedBox(height: 16),
+                _buildNameField(),
+                const SizedBox(height: 16),
+                _buildCategoryDropdown(),
+                const SizedBox(height: 16),
+                _buildDescriptionField(),
+                const SizedBox(height: 24),
+
+                // Info: Harga diatur di tab "Pricing" untuk multi-unit support
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Harga produk diatur di tab "Pricing" untuk mendukung harga berbeda per cabang dan per unit.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Stock Section
+                _buildSectionHeader('Stok'),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(flex: 2, child: _buildStockField()),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 2, child: _buildMinStockField()),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: _buildMaxStockField()),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildReorderPointField()),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Info: Unit, pajak, dan diskon dikelola di tab lain
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Unit produk diatur di tab "Units". Stok dihitung dalam unit terkecil (base unit).',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Status Section
+                _buildSectionHeader('Status'),
+                const SizedBox(height: 16),
+                _buildActiveSwitch(),
+                const SizedBox(height: 100), // Extra space for bottom bar
+              ],
+            ),
+          ),
+        ),
+        if (_isLoading)
+          Container(
+            color: Colors.black.withOpacity(0.3),
+            child: const Center(child: CircularProgressIndicator()),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBottomBar(bool isEdit) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.3),
+            spreadRadius: 1,
+            blurRadius: 5,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            // Info Text
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Units: ${_productUnits.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    'Prices: ${_productPrices.length}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Buttons
+            OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              child: const Text('Batal'),
+            ),
+            const SizedBox(width: 12),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _submitForm,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 12,
+                ),
+              ),
+              child:
+                  _isLoading
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                      : Text(isEdit ? 'Update' : 'Simpan'),
+            ),
+          ],
         ),
       ),
     );
@@ -493,118 +656,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
-  Widget _buildcostPriceField() {
-    return TextFormField(
-      controller: _costPriceController,
-      decoration: InputDecoration(
-        labelText: 'Harga Beli *',
-        hintText: '0',
-        prefixText: 'Rp ',
-        prefixIcon: const Icon(Icons.attach_money),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Harga beli harus diisi';
-        }
-        final price = double.tryParse(value);
-        if (price == null || price <= 0) {
-          return 'Harga beli tidak valid';
-        }
-        return null;
-      },
-      onChanged: (value) {
-        setState(() {}); // Update profit calculation
-      },
-    );
-  }
-
-  Widget _buildSellingPriceField() {
-    return TextFormField(
-      controller: _sellingPriceController,
-      decoration: InputDecoration(
-        labelText: 'Harga Jual *',
-        hintText: '0',
-        prefixText: 'Rp ',
-        prefixIcon: const Icon(Icons.sell),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Harga jual harus diisi';
-        }
-        final price = double.tryParse(value);
-        if (price == null || price <= 0) {
-          return 'Harga jual tidak valid';
-        }
-        final costPrice = double.tryParse(_costPriceController.text);
-        if (costPrice != null && price < costPrice) {
-          return 'Harga jual < harga beli';
-        }
-        return null;
-      },
-      onChanged: (value) {
-        setState(() {}); // Update profit calculation
-      },
-    );
-  }
-
-  Widget _buildProfitInfo() {
-    final costPrice = double.tryParse(_costPriceController.text) ?? 0;
-    final sellingPrice = double.tryParse(_sellingPriceController.text) ?? 0;
-    final profit = sellingPrice - costPrice;
-    final margin = costPrice > 0 ? (profit / costPrice * 100) : 0;
-
-    if (costPrice == 0 || sellingPrice == 0) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color:
-            profit >= 0
-                ? AppColors.success.withOpacity(0.1)
-                : AppColors.error.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: profit >= 0 ? AppColors.success : AppColors.error,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            profit >= 0 ? Icons.trending_up : Icons.trending_down,
-            color: profit >= 0 ? AppColors.success : AppColors.error,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Keuntungan',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: profit >= 0 ? AppColors.success : AppColors.error,
-                  ),
-                ),
-                Text(
-                  'Rp ${profit.toStringAsFixed(0)} (${margin.toStringAsFixed(1)}%)',
-                  style: AppTextStyles.h6.copyWith(
-                    color: profit >= 0 ? AppColors.success : AppColors.error,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Note: Pricing fields removed - now managed in Pricing tab for multi-unit support
 
   Widget _buildStockField() {
     return TextFormField(
@@ -615,13 +667,15 @@ class _ProductFormPageState extends State<ProductFormPage> {
         prefixIcon: const Icon(Icons.inventory),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
       validator: (value) {
         if (value == null || value.isEmpty) {
           return 'Stok harus diisi';
         }
-        final stock = int.tryParse(value);
+        final stock = double.tryParse(value);
         if (stock == null || stock < 0) {
           return 'Stok tidak valid';
         }
@@ -639,13 +693,15 @@ class _ProductFormPageState extends State<ProductFormPage> {
         prefixIcon: const Icon(Icons.warning),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
       validator: (value) {
         if (value == null || value.isEmpty) {
           return 'Stok min harus diisi';
         }
-        final minStock = int.tryParse(value);
+        final minStock = double.tryParse(value);
         if (minStock == null || minStock < 0) {
           return 'Stok min tidak valid';
         }
@@ -654,176 +710,9 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
-  Widget _buildUnitDropdown() {
-    return Row(
-      children: [
-        Expanded(
-          child:
-              _units.isEmpty
-                  ? TextFormField(
-                    decoration: InputDecoration(
-                      labelText: 'Satuan *',
-                      hintText: 'Loading...',
-                      prefixIcon: const Icon(Icons.straighten),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    enabled: false,
-                  )
-                  : Autocomplete<String>(
-                    optionsBuilder: (TextEditingValue textEditingValue) {
-                      if (textEditingValue.text.isEmpty) {
-                        return _units;
-                      }
-                      return _units.where((String unit) {
-                        return unit.toLowerCase().contains(
-                          textEditingValue.text.toLowerCase(),
-                        );
-                      });
-                    },
-                    onSelected: (String selection) {
-                      setState(() {
-                        _selectedUnit = selection;
-                      });
-                    },
-                    fieldViewBuilder: (
-                      BuildContext context,
-                      TextEditingController textEditingController,
-                      FocusNode focusNode,
-                      VoidCallback onFieldSubmitted,
-                    ) {
-                      // Set initial value only once
-                      if (textEditingController.text.isEmpty &&
-                          _selectedUnit.isNotEmpty) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          textEditingController.text = _selectedUnit;
-                        });
-                      }
+  // Note: Unit dropdown removed - units managed in Units tab
 
-                      return TextFormField(
-                        controller: textEditingController,
-                        focusNode: focusNode,
-                        decoration: InputDecoration(
-                          labelText: 'Satuan *',
-                          hintText: 'Ketik atau pilih satuan',
-                          prefixIcon: const Icon(Icons.straighten),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Satuan harus dipilih';
-                          }
-                          if (!_units.contains(value)) {
-                            return 'Satuan tidak valid';
-                          }
-                          return null;
-                        },
-                        onChanged: (value) {
-                          // Update selected unit when typing
-                          if (_units.contains(value)) {
-                            _selectedUnit = value;
-                          }
-                        },
-                      );
-                    },
-                    optionsViewBuilder: (
-                      BuildContext context,
-                      AutocompleteOnSelected<String> onSelected,
-                      Iterable<String> options,
-                    ) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          elevation: 4.0,
-                          borderRadius: BorderRadius.circular(12),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              maxHeight: 200,
-                              maxWidth: 300,
-                            ),
-                            child: ListView.builder(
-                              padding: const EdgeInsets.all(8.0),
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                final String option = options.elementAt(index);
-                                return InkWell(
-                                  onTap: () {
-                                    onSelected(option);
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 12.0,
-                                      horizontal: 16.0,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          option == _selectedUnit
-                                              ? AppColors.primary.withOpacity(
-                                                0.1,
-                                              )
-                                              : null,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        if (option == _selectedUnit)
-                                          const Icon(
-                                            Icons.check,
-                                            color: AppColors.primary,
-                                            size: 20,
-                                          ),
-                                        if (option == _selectedUnit)
-                                          const SizedBox(width: 8),
-                                        Text(
-                                          option,
-                                          style: TextStyle(
-                                            fontWeight:
-                                                option == _selectedUnit
-                                                    ? FontWeight.bold
-                                                    : FontWeight.normal,
-                                            color:
-                                                option == _selectedUnit
-                                                    ? AppColors.primary
-                                                    : null,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          onPressed:
-              _isLoadingUnits
-                  ? null
-                  : () async {
-                    // Open unit management
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const UnitListPage()),
-                    );
-                    // reload units if changed
-                    if (result == true) await _loadUnits();
-                  },
-          icon: const Icon(Icons.edit),
-          tooltip: 'Kelola Satuan',
-          color: AppColors.primary,
-        ),
-      ],
-    );
-  }
+  // Note: Unit dropdown removed - units managed in Units tab
 
   Widget _buildMaxStockField() {
     return TextFormField(
@@ -834,11 +723,13 @@ class _ProductFormPageState extends State<ProductFormPage> {
         prefixIcon: const Icon(Icons.inventory_2),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
       validator: (value) {
         if (value != null && value.isNotEmpty) {
-          final maxStock = int.tryParse(value);
+          final maxStock = double.tryParse(value);
           if (maxStock == null || maxStock < 0) {
             return 'Tidak valid';
           }
@@ -857,11 +748,13 @@ class _ProductFormPageState extends State<ProductFormPage> {
         prefixIcon: const Icon(Icons.notification_important),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+      ],
       validator: (value) {
         if (value != null && value.isNotEmpty) {
-          final reorder = int.tryParse(value);
+          final reorder = double.tryParse(value);
           if (reorder == null || reorder < 0) {
             return 'Tidak valid';
           }
@@ -871,49 +764,7 @@ class _ProductFormPageState extends State<ProductFormPage> {
     );
   }
 
-  Widget _buildTaxRateField() {
-    return TextFormField(
-      controller: _taxRateController,
-      decoration: InputDecoration(
-        labelText: 'Pajak (%)',
-        hintText: '0',
-        prefixIcon: const Icon(Icons.percent),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      validator: (value) {
-        if (value != null && value.isNotEmpty) {
-          final rate = double.tryParse(value);
-          if (rate == null || rate < 0 || rate > 100) {
-            return 'Pajak 0-100%';
-          }
-        }
-        return null;
-      },
-    );
-  }
-
-  Widget _buildDiscountField() {
-    return TextFormField(
-      controller: _discountController,
-      decoration: InputDecoration(
-        labelText: 'Diskon (%)',
-        hintText: '0',
-        prefixIcon: const Icon(Icons.discount),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      validator: (value) {
-        if (value != null && value.isNotEmpty) {
-          final disc = double.tryParse(value);
-          if (disc == null || disc < 0 || disc > 100) {
-            return 'Diskon 0-100%';
-          }
-        }
-        return null;
-      },
-    );
-  }
+  // Note: Tax and discount fields removed - can be managed in pricing logic if needed
 
   Widget _buildCategoryDropdown() {
     return Row(
@@ -1138,51 +989,334 @@ class _ProductFormPageState extends State<ProductFormPage> {
   }
 
   void _submitForm() {
-    if (_formKey.currentState!.validate()) {
-      final isEdit = widget.product != null;
-
-      final product = Product(
-        id: isEdit ? widget.product!.id : const Uuid().v4(),
-        barcode: _barcodeController.text.trim(),
-        sku: _skuController.text.trim(),
-        name: _nameController.text.trim(),
-        description:
-            _descriptionController.text.trim().isEmpty
-                ? null
-                : _descriptionController.text.trim(),
-        categoryId: _selectedCategoryId,
-        categoryName: _selectedCategoryName,
-        unit: _selectedUnit,
-        costPrice: double.parse(_costPriceController.text),
-        sellingPrice: double.parse(_sellingPriceController.text),
-        stock: double.parse(_stockController.text),
-        minStock: double.parse(_minStockController.text),
-        maxStock:
-            _maxStockController.text.isEmpty
-                ? 0
-                : double.parse(_maxStockController.text),
-        reorderPoint:
-            _reorderPointController.text.isEmpty
-                ? 0
-                : int.parse(_reorderPointController.text),
-        taxRate:
-            _taxRateController.text.isEmpty
-                ? 0
-                : double.parse(_taxRateController.text),
-        discountPercentage:
-            _discountController.text.isEmpty
-                ? 0
-                : double.parse(_discountController.text),
-        isActive: _isActive,
-        syncStatus: 'PENDING',
-        createdAt: isEdit ? widget.product!.createdAt : DateTime.now(),
-        updatedAt: DateTime.now(),
+    // Validate basic info form
+    if (!_formKey.currentState!.validate()) {
+      _tabController.animateTo(0); // Switch to Info tab
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mohon lengkapi informasi dasar produk'),
+          backgroundColor: Colors.red,
+        ),
       );
+      return;
+    }
 
-      if (isEdit) {
-        _productBloc.add(event.UpdateProduct(product));
-      } else {
-        _productBloc.add(event.CreateProduct(product));
+    // Validate units (must have at least 1 unit)
+    if (_productUnits.isEmpty) {
+      _tabController.animateTo(1); // Switch to Units tab
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Minimal harus ada 1 unit. Sistem akan membuat unit dasar otomatis.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Validate base unit exists
+    final hasBaseUnit = _productUnits.any((u) => u['isBaseUnit'] == true);
+    if (!hasBaseUnit) {
+      _tabController.animateTo(1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Harus ada 1 unit dasar'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final isEdit = widget.product != null;
+
+    // Get default price from first unit/price or use 0
+    double defaultCostPrice = 0;
+    double defaultSellingPrice = 0;
+
+    if (_productPrices.isNotEmpty) {
+      defaultCostPrice = _productPrices[0]['costPrice'] ?? 0;
+      defaultSellingPrice = _productPrices[0]['sellingPrice'] ?? 0;
+    }
+
+    final product = Product(
+      id:
+          isEdit
+              ? widget.product!.id
+              : '', // Empty for new product, backend will assign ID
+      barcode: _barcodeController.text.trim(),
+      sku: _skuController.text.trim(),
+      name: _nameController.text.trim(),
+      description:
+          _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
+      categoryId: _selectedCategoryId,
+      categoryName: _selectedCategoryName,
+      unit:
+          _productUnits.isNotEmpty
+              ? _productUnits[0]['unitName'] ?? 'PCS'
+              : 'PCS', // Use base unit from Units tab
+      costPrice: defaultCostPrice,
+      sellingPrice: defaultSellingPrice,
+      stock: double.tryParse(_stockController.text) ?? 0,
+      minStock: double.tryParse(_minStockController.text) ?? 0,
+      maxStock:
+          _maxStockController.text.isEmpty
+              ? 0
+              : double.tryParse(_maxStockController.text) ?? 0,
+      reorderPoint:
+          _reorderPointController.text.isEmpty
+              ? 0
+              : (double.tryParse(_reorderPointController.text) ?? 0).toInt(),
+      taxRate:
+          _taxRateController.text.isEmpty
+              ? 0
+              : double.tryParse(_taxRateController.text) ?? 0,
+      discountPercentage:
+          _discountController.text.isEmpty
+              ? 0
+              : double.tryParse(_discountController.text) ?? 0,
+      isActive: _isActive,
+      syncStatus: 'PENDING',
+      createdAt: isEdit ? widget.product!.createdAt : DateTime.now(),
+      updatedAt: DateTime.now(),
+      // Include units and prices (will be handled by backend)
+      units: null,
+      prices: null,
+    );
+
+    // Save product first via Bloc
+    if (isEdit) {
+      _productBloc.add(event.UpdateProduct(product));
+      // For edit mode, we already have the ID, save units/prices immediately
+      if (_productUnits.isNotEmpty || _productPrices.isNotEmpty) {
+        _saveUnitsAndPrices(product.id);
+      }
+    } else {
+      _productBloc.add(event.CreateProduct(product));
+      // For create mode, we'll save units/prices in BlocListener after getting the ID
+    }
+  }
+
+  Future<void> _saveUnitsAndPricesAfterCreate(
+    ProductOperationSuccess state,
+  ) async {
+    // Get product ID from the created product
+    final productId = state.product?.id;
+
+    if (productId == null || productId.isEmpty) {
+      // If no product ID, show error and navigate back
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Produk disimpan tapi tidak bisa menyimpan units/prices (ID tidak valid)',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.pop(context, true);
+      }
+      return;
+    }
+
+    // Save units and prices
+    await _saveUnitsAndPrices(productId);
+
+    // Show success and navigate back
+    if (mounted) {
+      Navigator.pop(context, true);
+    }
+  }
+
+  Future<void> _saveUnitsAndPrices(String productId) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final apiClient = sl<ApiClient>();
+
+      // Helper to round price to 2 decimal places (match backend DECIMAL(15,2))
+      double? roundPrice(dynamic price) {
+        if (price == null) return null;
+        final num = price is double ? price : double.tryParse(price.toString());
+        if (num == null || num == 0) return null;
+        // Round to 2 decimal places
+        return (num * 100).round() / 100;
+      }
+
+      // 1. Save Units (Smart Update - only modify what changed)
+      if (_productUnits.isNotEmpty) {
+        // Get existing units from backend
+        final List<dynamic> existingUnits;
+        if (widget.product != null && widget.product!.units != null) {
+          existingUnits =
+              widget.product!.units!
+                  .map(
+                    (u) => {
+                      'id': u.id,
+                      'unitName': u.unitName,
+                      'conversionValue': u.conversionValue,
+                      'isBaseUnit': u.isBaseUnit,
+                      'isPurchasable': u.isPurchasable,
+                      'isSellable': u.isSellable,
+                      'barcode': u.barcode,
+                      'sortOrder': u.sortOrder,
+                    },
+                  )
+                  .toList();
+        } else {
+          existingUnits = [];
+        }
+
+        // Create maps for comparison
+        final existingUnitNames = {
+          for (var u in existingUnits) u['unitName']: u,
+        };
+        final currentUnitNames = {
+          for (var u in _productUnits) u['unitName']: u,
+        };
+
+        // Find units to delete (in existing but not in current)
+        for (var existingUnit in existingUnits) {
+          final unitName = existingUnit['unitName'] as String;
+          if (!currentUnitNames.containsKey(unitName)) {
+            try {
+              await apiClient.delete(
+                '/products/$productId/units/${existingUnit['id']}',
+              );
+              print('Deleted unit: $unitName');
+            } catch (e) {
+              print('Failed to delete unit $unitName: $e');
+            }
+          }
+        }
+
+        // Find units to create or update
+        for (var unit in _productUnits) {
+          final unitName = unit['unitName'] as String;
+          final existingUnit = existingUnitNames[unitName];
+
+          if (existingUnit == null) {
+            // Create new unit
+            try {
+              await apiClient.post(
+                '/products/$productId/units',
+                data: {
+                  'unitName': unit['unitName'],
+                  'conversionValue': unit['conversionValue'] ?? 1.0,
+                  'isBaseUnit': unit['isBaseUnit'] ?? false,
+                  'isPurchasable': unit['canPurchase'] ?? true,
+                  'isSellable': unit['canSell'] ?? true,
+                  'barcode': unit['barcode'] ?? '',
+                  'sortOrder': unit['sortOrder'] ?? 0,
+                },
+              );
+              print('Created unit: $unitName');
+            } catch (e) {
+              print('Failed to create unit $unitName: $e');
+            }
+          } else {
+            // Check if unit has changed
+            final hasChanged =
+                existingUnit['conversionValue'] !=
+                    (unit['conversionValue'] ?? 1.0) ||
+                existingUnit['isBaseUnit'] != (unit['isBaseUnit'] ?? false) ||
+                existingUnit['isPurchasable'] !=
+                    (unit['canPurchase'] ?? true) ||
+                existingUnit['isSellable'] != (unit['canSell'] ?? true) ||
+                existingUnit['barcode'] != (unit['barcode'] ?? '') ||
+                existingUnit['sortOrder'] != (unit['sortOrder'] ?? 0);
+
+            if (hasChanged) {
+              // Update existing unit
+              try {
+                await apiClient.put(
+                  '/products/$productId/units/${existingUnit['id']}',
+                  data: {
+                    'unitName': unit['unitName'],
+                    'conversionValue': unit['conversionValue'] ?? 1.0,
+                    'isBaseUnit': unit['isBaseUnit'] ?? false,
+                    'isPurchasable': unit['canPurchase'] ?? true,
+                    'isSellable': unit['canSell'] ?? true,
+                    'barcode': unit['barcode'] ?? '',
+                    'sortOrder': unit['sortOrder'] ?? 0,
+                  },
+                );
+                print('Updated unit: $unitName');
+              } catch (e) {
+                print('Failed to update unit $unitName: $e');
+              }
+            } else {
+              print('Unit unchanged: $unitName');
+            }
+          }
+        }
+      }
+
+      // 2. Save Prices
+      if (_productPrices.isNotEmpty) {
+        // Get unit IDs from backend (after units are created)
+        final unitsResponse = await apiClient.get('/products/$productId/units');
+        final createdUnits = unitsResponse.data['data'] as List? ?? [];
+
+        // Create map of unitName -> unitId
+        final unitNameToId = <String, String>{};
+        for (var unit in createdUnits) {
+          unitNameToId[unit['unit_name']] = unit['id'];
+        }
+
+        // For edit mode, we'll use PUT to update prices
+        // Backend will handle upsert logic
+        for (var price in _productPrices) {
+          final unitId = unitNameToId[price['unitName']];
+          if (unitId == null) continue;
+
+          try {
+            // Use the correct endpoint with body data
+            await apiClient.put(
+              '/products/$productId/prices',
+              data: {
+                'branchId': price['branchId'],
+                'unitId': unitId, // Changed from productUnitId to unitId
+                'costPrice': roundPrice(price['costPrice']),
+                'sellingPrice': roundPrice(price['sellingPrice']) ?? 0,
+                'wholesalePrice': roundPrice(price['wholesalePrice']),
+                'memberPrice': roundPrice(price['memberPrice']),
+              },
+            );
+          } catch (e) {
+            print('Failed to save price for ${price['branchName']}: $e');
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Produk berhasil disimpan dengan ${_productUnits.length} unit dan ${_productPrices.length} harga',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error saving units and prices: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Produk disimpan, tapi ada error pada units/prices: $e',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }

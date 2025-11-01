@@ -51,7 +51,7 @@ export const clearProductCache = async (req, res) => {
  * Get all products with pagination and filters
  */
 export const getAllProducts = async (req, res) => {
-  const {
+  let {
     page = 1,
     limit = 20,
     search = "",
@@ -62,6 +62,20 @@ export const getAllProducts = async (req, res) => {
     sortOrder = "desc", // Default descending (newest first)
   } = req.query;
 
+  // Auto-filter by user's default branch if not super_admin
+  if (!branchId && req.user.role !== "super_admin") {
+    // Get user's default branch
+    const userBranch = await db.query(
+      `SELECT branch_id FROM user_branches 
+       WHERE user_id = $1 AND is_default = true 
+       LIMIT 1`,
+      [req.user.id]
+    );
+    if (userBranch.rows.length > 0) {
+      branchId = userBranch.rows[0].branch_id;
+    }
+  }
+
   const offset = (page - 1) * limit;
 
   // Map sortBy to actual database column names
@@ -69,8 +83,6 @@ export const getAllProducts = async (req, res) => {
     sku: "p.sku",
     barcode: "p.barcode",
     name: "p.name",
-    cost_price: "p.cost_price",
-    selling_price: "p.selling_price",
     stock: "total_quantity",
     created_at: "p.created_at",
   };
@@ -170,9 +182,16 @@ export const getAllProducts = async (req, res) => {
   // Execute query
   const result = await db.query(query, params);
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProducts = result.rows.map((product) => ({
+    ...product,
+    id: product.id.toString(),
+    category_id: product.category_id ? product.category_id.toString() : null,
+  }));
+
   res.json({
     success: true,
-    data: result.rows,
+    data: formattedProducts,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -231,9 +250,16 @@ export const getProductById = async (req, res) => {
 
   // DISABLED CACHE: await cache.set(cacheKey, product, 10);
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProduct = {
+    ...product,
+    id: product.id.toString(),
+    category_id: product.category_id ? product.category_id.toString() : null,
+  };
+
   res.json({
     success: true,
-    data: product,
+    data: formattedProduct,
   });
 };
 
@@ -288,9 +314,18 @@ export const getProductByBarcode = async (req, res) => {
     throw new NotFoundError("Product not found");
   }
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProduct = {
+    ...result.rows[0],
+    id: result.rows[0].id.toString(),
+    category_id: result.rows[0].category_id
+      ? result.rows[0].category_id.toString()
+      : null,
+  };
+
   res.json({
     success: true,
-    data: result.rows[0],
+    data: formattedProduct,
   });
 };
 
@@ -305,7 +340,7 @@ export const searchProducts = async (req, res) => {
   }
 
   const result = await db.query(
-    `SELECT p.id, p.sku, p.barcode, p.name, p.selling_price, p.is_active, p.cost_price, p.unit,
+    `SELECT p.id, p.sku, p.barcode, p.name, p.is_active, p.base_unit,
             COALESCE(stock_agg.total_quantity, 0) as stock_quantity,
             COALESCE(stock_agg.total_available, 0) as available_quantity,
             stock_agg.branch_stocks
@@ -346,9 +381,16 @@ export const searchProducts = async (req, res) => {
     [`%${q}%`, limit]
   );
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProducts = result.rows.map((product) => ({
+    ...product,
+    id: product.id.toString(),
+    category_id: product.category_id ? product.category_id.toString() : null,
+  }));
+
   res.json({
     success: true,
-    data: result.rows,
+    data: formattedProducts,
   });
 };
 
@@ -419,9 +461,17 @@ export const getLowStockProducts = async (req, res) => {
 
   const result = await db.query(query, params);
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProducts = result.rows.map((product) => ({
+    ...product,
+    id: product.id.toString(),
+    category_id: product.category_id ? product.category_id.toString() : null,
+    branch_id: product.branch_id ? product.branch_id.toString() : null,
+  }));
+
   res.json({
     success: true,
-    data: result.rows,
+    data: formattedProducts,
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -441,9 +491,7 @@ export const createProduct = async (req, res) => {
     name,
     description,
     categoryId,
-    unit,
-    costPrice,
-    sellingPrice,
+    baseUnit,
     minStock,
     maxStock,
     reorderPoint,
@@ -454,8 +502,8 @@ export const createProduct = async (req, res) => {
   } = req.body;
 
   // Validate required fields
-  if (!sku || !name || !sellingPrice) {
-    throw new ValidationError("SKU, name, and selling price are required");
+  if (!sku || !name) {
+    throw new ValidationError("SKU and name are required");
   }
 
   // Use transaction to ensure product and stock records are created together
@@ -464,13 +512,13 @@ export const createProduct = async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Insert product
+    // Insert product (without cost_price and selling_price)
     const productResult = await client.query(
       `INSERT INTO products (
-        sku, barcode, name, description, category_id, unit,
-        cost_price, selling_price, min_stock, max_stock, reorder_point,
+        sku, barcode, name, description, category_id, base_unit,
+        min_stock, max_stock, reorder_point,
         image_url, attributes, tax_rate, discount_percentage
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *`,
       [
         sku,
@@ -478,9 +526,7 @@ export const createProduct = async (req, res) => {
         name,
         description,
         categoryId,
-        unit || "PCS",
-        costPrice || 0,
-        sellingPrice,
+        baseUnit || "PCS",
         minStock || 0,
         maxStock || 0,
         reorderPoint || 0,
@@ -529,9 +575,16 @@ export const createProduct = async (req, res) => {
       `📢 WebSocket event emitted: product:created for ${product.id}`
     );
 
+    // Format response: convert IDs to strings for Flutter compatibility
+    const formattedProduct = {
+      ...product,
+      id: product.id.toString(),
+      category_id: product.category_id ? product.category_id.toString() : null,
+    };
+
     res.status(201).json({
       success: true,
-      data: product,
+      data: formattedProduct,
       message: "Product created successfully",
     });
   } catch (error) {
@@ -567,9 +620,7 @@ export const updateProduct = async (req, res) => {
     name: "name",
     description: "description",
     categoryId: "category_id",
-    unit: "unit",
-    costPrice: "cost_price",
-    sellingPrice: "selling_price",
+    baseUnit: "base_unit",
     minStock: "min_stock",
     maxStock: "max_stock",
     reorderPoint: "reorder_point",
@@ -622,9 +673,16 @@ export const updateProduct = async (req, res) => {
   });
   logger.info(`📢 WebSocket event emitted: product:updated for ${id}`);
 
+  // Format response: convert IDs to strings for Flutter compatibility
+  const formattedProduct = {
+    ...product,
+    id: product.id.toString(),
+    category_id: product.category_id ? product.category_id.toString() : null,
+  };
+
   res.json({
     success: true,
-    data: product,
+    data: formattedProduct,
     message: "Product updated successfully",
   });
 };
@@ -882,29 +940,11 @@ export const importProducts = async (req, res) => {
               row.Nama || row.Name || row.name || row.NAMA || ""
             ).trim();
 
-            // Parse price
-            let sellingPrice = 0;
-            const priceValue =
-              row["Harga Jual"] ||
-              row.sellingPrice ||
-              row.SellingPrice ||
-              row.selling_price;
-
-            if (
-              priceValue !== undefined &&
-              priceValue !== null &&
-              priceValue !== ""
-            ) {
-              sellingPrice = parseFloat(
-                String(priceValue).replace(/[^\d.-]/g, "")
-              );
-            }
-
-            if (!sku || !name || !sellingPrice || sellingPrice <= 0) {
+            if (!sku || !name) {
               results.errors.push({
                 row: rowNumber,
                 sku: sku || "(empty)",
-                error: `Missing/invalid required fields`,
+                error: `Missing required fields (SKU and Name)`,
               });
               continue;
             }
@@ -927,20 +967,14 @@ export const importProducts = async (req, res) => {
               ).trim() || null;
             const categoryId =
               row["Category ID"] || row.categoryId || row.category_id || null;
-            const unit = String(
-              row.Satuan || row.Unit || row.unit || "PCS"
+            const baseUnit = String(
+              row.Satuan ||
+                row["Base Unit"] ||
+                row.Unit ||
+                row.unit ||
+                row.baseUnit ||
+                "PCS"
             ).trim();
-
-            const costPrice =
-              parseFloat(
-                String(
-                  row["Harga Beli"] ||
-                    row.costPrice ||
-                    row.CostPrice ||
-                    row.cost_price ||
-                    0
-                ).replace(/[^\d.-]/g, "")
-              ) || 0;
             const minStock =
               parseInt(
                 String(
@@ -978,10 +1012,10 @@ export const importProducts = async (req, res) => {
             // Insert product
             const productResult = await client.query(
               `INSERT INTO products (
-                sku, barcode, name, description, category_id, unit,
-                cost_price, selling_price, min_stock, max_stock, reorder_point,
+                sku, barcode, name, description, category_id, base_unit,
+                min_stock, max_stock, reorder_point,
                 tax_rate, discount_percentage, is_active
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true)
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
               RETURNING id, sku, name`,
               [
                 sku,
@@ -989,9 +1023,7 @@ export const importProducts = async (req, res) => {
                 name,
                 description,
                 categoryId,
-                unit,
-                costPrice,
-                sellingPrice,
+                baseUnit,
                 minStock,
                 maxStock,
                 reorderPoint,

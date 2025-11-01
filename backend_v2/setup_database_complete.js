@@ -45,7 +45,13 @@ async function setupDatabase() {
     console.log("");
 
     // Read complete schema SQL file
-    const schemaPath = path.join(__dirname, "COMPLETE_SCHEME.sql");
+    const schemaPath = path.join(
+      __dirname,
+      "src",
+      "database",
+      "migrations",
+      "COMPLETE_SCHEME_V4.sql"
+    );
 
     console.log("📖 Reading complete schema file:", schemaPath);
 
